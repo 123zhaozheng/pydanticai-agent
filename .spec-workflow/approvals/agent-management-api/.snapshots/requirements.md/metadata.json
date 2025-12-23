@@ -1,0 +1,30 @@
+{
+  "filePath": ".spec-workflow/specs/agent-management-api/requirements.md",
+  "currentVersion": 3,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-12-18T09:00:28.368Z",
+      "trigger": "initial",
+      "approvalId": "approval_1766048428342_obzt9oppu",
+      "approvalTitle": "Requirements Document - Agent Management API"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-12-18T09:08:18.462Z",
+      "trigger": "approved",
+      "approvalId": "approval_1766048642453_ar6fmbk72",
+      "approvalTitle": "需求文档 - Agent 管理 API"
+    },
+    {
+      "version": 3,
+      "filename": "snapshot-003.json",
+      "timestamp": "2025-12-18T09:08:20.075Z",
+      "trigger": "approved",
+      "approvalId": "approval_1766048428342_obzt9oppu",
+      "approvalTitle": "Requirements Document - Agent Management API"
+    }
+  ]
+}
