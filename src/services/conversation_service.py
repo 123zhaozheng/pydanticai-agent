@@ -77,13 +77,15 @@ class ConversationService:
         from pydantic_ai import (
             FunctionToolCallEvent,
             FunctionToolResultEvent,
-            TextPartDelta,
+            PartStartEvent,
             PartDeltaEvent,
+            TextPartDelta,
         )
         
-        # Track assistant response text chunks
+        # Track state across events
         assistant_text_chunks = []
-        current_model_tool_calls = []  # Track tool calls in current response
+        current_model_tool_calls = []
+        current_text_message_id = None  # ID of the Message being written
         
         async with agent.run_stream(
             user_message,
@@ -92,14 +94,42 @@ class ConversationService:
         ) as stream:
             
             async for event in stream:
-                # A. Stream text output to frontend
+                # A. Text Part Start - Create placeholder Message
+                if isinstance(event, PartStartEvent):
+                    # Check if this is a text part (not a tool call)
+                    # PartStartEvent doesn't have type info, so we create on first TextPartDelta
+                    pass
+                
+                # B. Stream text output to frontend + Real-time DB Update
                 if isinstance(event, PartDeltaEvent):
                     if isinstance(event.delta, TextPartDelta):
                         chunk = event.delta.content_delta
                         assistant_text_chunks.append(chunk)
+                        
+                        # Create placeholder on first chunk
+                        if current_text_message_id is None:
+                            placeholder_msg = Message(
+                                conversation_id=conversation_id,
+                                step_order=step_order,
+                                role='model',
+                                content=chunk,  # First chunk
+                                tool_calls=None
+                            )
+                            self.session.add(placeholder_msg)
+                            self.session.commit()
+                            self.session.refresh(placeholder_msg)
+                            current_text_message_id = placeholder_msg.id
+                        else:
+                            # Update existing message with accumulated text
+                            partial_text = "".join(assistant_text_chunks)
+                            self.session.query(Message).filter(
+                                Message.id == current_text_message_id
+                            ).update({"content": partial_text})
+                            self.session.commit()
+                        
                         yield chunk
                 
-                # B. Capture Tool Calls (Real-time)
+                # C. Capture Tool Calls (Real-time)
                 elif isinstance(event, FunctionToolCallEvent):
                     # Save tool call metadata
                     tool_call_data = {
@@ -108,26 +138,22 @@ class ConversationService:
                         "tool_call_id": event.part.tool_call_id
                     }
                     current_model_tool_calls.append(tool_call_data)
-                    
-                    # Note: We'll save the ModelResponse with tool calls when we're sure
-                    # it's complete (after all tool calls in this batch)
                 
-                # C. Capture Tool Returns (Real-time)
+                # D. Capture Tool Returns (Real-time)
                 elif isinstance(event, FunctionToolResultEvent):
-                    # If this is the first tool return and we have pending tool calls,
-                    # save the ModelResponse first
+                    # If we have pending tool calls, save ModelResponse first
                     if current_model_tool_calls:
                         model_response_msg = Message(
                             conversation_id=conversation_id,
                             step_order=step_order,
                             role='model',
-                            content="",  # Model made tool calls, no text yet
+                            content="",  # Model made tool calls, no text
                             tool_calls=current_model_tool_calls
                         )
                         self.session.add(model_response_msg)
                         self.session.commit()
                         step_order += 1
-                        current_model_tool_calls = []  # Clear after saving
+                        current_model_tool_calls = []
                     
                     # Save the tool return
                     tool_return_msg = Message(
@@ -142,18 +168,8 @@ class ConversationService:
                     self.session.commit()
                     step_order += 1
         
-        # 4. Post-Stream: Save Final Assistant Response (if any text)
-        if assistant_text_chunks:
-            final_text = "".join(assistant_text_chunks)
-            final_msg = Message(
-                conversation_id=conversation_id,
-                step_order=step_order,
-                role='model',
-                content=final_text,
-                tool_calls=None  # Final response is pure text
-            )
-            self.session.add(final_msg)
-            self.session.commit()
+        # 4. Post-Stream: No additional save needed!
+        # Text was already saved incrementally during streaming
         
         # 5. Persist Final State (Dehydration)
         # DeepAgentDeps.todos has been mutated by tools during execution
@@ -186,6 +202,35 @@ class ConversationService:
         )
         result = self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def list_conversations(
+        self, 
+        user_id: int, 
+        include_archived: bool = False,
+        limit: int = 50,
+        offset: int = 0
+    ) -> list[Conversation]:
+        """
+        Get all conversations for a user.
+        
+        Args:
+            user_id: User ID
+            include_archived: Whether to include archived conversations
+            limit: Max number of conversations to return
+            offset: Pagination offset
+        
+        Returns:
+            List of conversations ordered by updated_at desc
+        """
+        stmt = select(Conversation).where(Conversation.user_id == user_id)
+        
+        if not include_archived:
+            stmt = stmt.where(Conversation.is_archived == False)
+        
+        stmt = stmt.order_by(desc(Conversation.updated_at)).limit(limit).offset(offset)
+        
+        result = self.session.execute(stmt)
+        return result.scalars().all()
 
     async def get_history(self, conversation_id: int) -> list[ModelMessage]:
         """
@@ -239,6 +284,31 @@ class ConversationService:
                 )]))
                 
         return history
+
+    async def get_messages(
+        self,
+        conversation_id: int,
+        user_id: int,
+        limit: int = 100,
+        offset: int = 0
+    ) -> list[Message]:
+        """
+        Get raw messages for a conversation (for display in UI).
+        
+        Returns:
+            List of Message objects ordered by step_order
+        """
+        # Verify ownership
+        conv = await self.get_conversation(conversation_id, user_id)
+        if not conv:
+            raise ValueError(f"Conversation {conversation_id} not found")
+        
+        stmt = select(Message).where(
+            Message.conversation_id == conversation_id
+        ).order_by(Message.step_order).limit(limit).offset(offset)
+        
+        result = self.session.execute(stmt)
+        return result.scalars().all()
 
     async def persist_message(self, conversation_id: int, message: ModelMessage, step_order: int) -> None:
         """
