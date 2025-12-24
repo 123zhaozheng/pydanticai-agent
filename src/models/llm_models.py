@@ -3,7 +3,7 @@
 from sqlalchemy import Column, Integer, String, Text, Boolean, Float, JSON, DateTime
 from datetime import datetime
 
-from src.models.base import Base
+from src.database import Base
 
 
 class LLMModelConfig(Base):

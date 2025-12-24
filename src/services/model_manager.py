@@ -35,7 +35,7 @@ class ModelManager:
         Get model instance by name (with caching).
         
         Args:
-            model_name: Model config name from database
+            model_name: Model config name OR model_name from database
             db_session: SQLAlchemy Session
         
         Returns:
@@ -44,24 +44,45 @@ class ModelManager:
         Raises:
             ValueError: If model config not found or inactive
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"[ModelManager] Looking for model: {model_name}")
+        
         # Check cache
         if model_name in self._model_cache:
+            logger.info(f"[ModelManager] Found in cache: {model_name}")
             return self._model_cache[model_name]
         
-        # Load from database
+        # Load from database - try config name first, then model_name
         config = db_session.query(LLMModelConfig).filter(
             LLMModelConfig.name == model_name,
             LLMModelConfig.is_active == True
         ).first()
         
+        logger.info(f"[ModelManager] Query by name '{model_name}': {'found' if config else 'not found'}")
+        
+        # If not found by config name, try by model_name
+        if not config:
+            config = db_session.query(LLMModelConfig).filter(
+                LLMModelConfig.model_name == model_name,
+                LLMModelConfig.is_active == True
+            ).first()
+            logger.info(f"[ModelManager] Query by model_name '{model_name}': {'found' if config else 'not found'}")
+        
         if not config:
             raise ValueError(f"Model config '{model_name}' not found or inactive")
+        
+        # Log config details (mask API key)
+        api_key_preview = config.api_key[:8] + "..." if config.api_key else "None"
+        logger.info(f"[ModelManager] Found config: name={config.name}, provider={config.provider_type}, model={config.model_name}, base_url={config.base_url}, api_key={api_key_preview}")
         
         # Create instance
         model = self._create_model_instance(config)
         
-        # Cache
+        # Cache by both names
         self._model_cache[model_name] = model
+        self._model_cache[config.name] = model
         
         return model
     

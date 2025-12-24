@@ -98,7 +98,7 @@ class MCPToolService:
             url=tool_data.get("url"),
             command=tool_data.get("command"),
             input_schema=tool_data["input_schema"],
-            metadata=tool_data.get("metadata"),
+            tool_metadata=tool_data.get("metadata"),  # API still uses 'metadata' in requests
             timeout_seconds=tool_data.get("timeout_seconds", 120),
             is_active=tool_data.get("is_active", True),
             is_builtin=tool_data.get("is_builtin", False),

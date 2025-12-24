@@ -328,6 +328,12 @@ def create_deep_agent(  # noqa: C901
 
     agent_create_kwargs.update(agent_kwargs)
 
+    # Log toolsets for debugging
+    import logging
+    logger = logging.getLogger(__name__)
+    toolset_names = [t.id if hasattr(t, 'id') else str(type(t).__name__) for t in all_toolsets]
+    logger.info(f"[DeepAgent] Creating agent with {len(all_toolsets)} toolsets: {toolset_names}")
+    
     # Create the agent
     agent: Agent[DeepAgentDeps, Any] = Agent(
         model,

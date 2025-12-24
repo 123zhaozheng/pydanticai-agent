@@ -73,107 +73,95 @@ class ConversationService:
         self.session.commit()
         step_order += 1
         
-        # 3. Running the Stream with Event-Based Persistence
+        # 3. 真正的流式输出 + 完整工具事件捕获
         from pydantic_ai import (
             FunctionToolCallEvent,
             FunctionToolResultEvent,
-            PartStartEvent,
-            PartDeltaEvent,
-            TextPartDelta,
+            RunContext,
         )
+        from collections.abc import AsyncIterable
         
-        # Track state across events
         assistant_text_chunks = []
-        current_model_tool_calls = []
-        current_text_message_id = None  # ID of the Message being written
+        current_tool_calls = []  # 收集当前轮次的工具调用
         
-        async with agent.run_stream(
-            user_message,
-            deps=deps,
-            message_history=history
-        ) as stream:
+        # 事件流处理器 - 正确签名: (ctx, event_stream) -> None
+        async def event_stream_handler(ctx: RunContext, event_stream: AsyncIterable):
+            nonlocal step_order, current_tool_calls
             
-            async for event in stream:
-                # A. Text Part Start - Create placeholder Message
-                if isinstance(event, PartStartEvent):
-                    # Check if this is a text part (not a tool call)
-                    # PartStartEvent doesn't have type info, so we create on first TextPartDelta
-                    pass
-                
-                # B. Stream text output to frontend + Real-time DB Update
-                if isinstance(event, PartDeltaEvent):
-                    if isinstance(event.delta, TextPartDelta):
-                        chunk = event.delta.content_delta
-                        assistant_text_chunks.append(chunk)
-                        
-                        # Create placeholder on first chunk
-                        if current_text_message_id is None:
-                            placeholder_msg = Message(
-                                conversation_id=conversation_id,
-                                step_order=step_order,
-                                role='model',
-                                content=chunk,  # First chunk
-                                tool_calls=None
-                            )
-                            self.session.add(placeholder_msg)
-                            self.session.commit()
-                            self.session.refresh(placeholder_msg)
-                            current_text_message_id = placeholder_msg.id
-                        else:
-                            # Update existing message with accumulated text
-                            partial_text = "".join(assistant_text_chunks)
-                            self.session.query(Message).filter(
-                                Message.id == current_text_message_id
-                            ).update({"content": partial_text})
-                            self.session.commit()
-                        
-                        yield chunk
-                
-                # C. Capture Tool Calls (Real-time)
-                elif isinstance(event, FunctionToolCallEvent):
-                    # Save tool call metadata
-                    tool_call_data = {
+            async for event in event_stream:
+                # A. 工具调用事件 - 保存工具调用信息
+                if isinstance(event, FunctionToolCallEvent):
+                    tool_call = {
                         "name": event.part.tool_name,
                         "args": event.part.args,
                         "tool_call_id": event.part.tool_call_id
                     }
-                    current_model_tool_calls.append(tool_call_data)
+                    current_tool_calls.append(tool_call)
                 
-                # D. Capture Tool Returns (Real-time)
+                # B. 工具返回事件 - 保存到数据库
                 elif isinstance(event, FunctionToolResultEvent):
-                    # If we have pending tool calls, save ModelResponse first
-                    if current_model_tool_calls:
-                        model_response_msg = Message(
+                    # 先保存模型的工具调用消息
+                    if current_tool_calls:
+                        model_msg = Message(
                             conversation_id=conversation_id,
                             step_order=step_order,
                             role='model',
-                            content="",  # Model made tool calls, no text
-                            tool_calls=current_model_tool_calls
+                            content="",
+                            tool_calls=current_tool_calls
                         )
-                        self.session.add(model_response_msg)
+                        self.session.add(model_msg)
                         self.session.commit()
                         step_order += 1
-                        current_model_tool_calls = []
+                        current_tool_calls = []
                     
-                    # Save the tool return
+                    # 保存工具返回
                     tool_return_msg = Message(
                         conversation_id=conversation_id,
                         step_order=step_order,
                         role='tool-return',
-                        tool_name=event.part.tool_name,
-                        tool_call_id=event.part.tool_call_id,
-                        tool_return_content=str(event.part.content)
+                        tool_name=event.tool_name,
+                        tool_call_id=event.tool_call_id,
+                        tool_return_content=str(event.result.content) if hasattr(event.result, 'content') else str(event.result)
                     )
                     self.session.add(tool_return_msg)
                     self.session.commit()
                     step_order += 1
         
-        # 4. Post-Stream: No additional save needed!
-        # Text was already saved incrementally during streaming
+        # 使用 run_stream + event_stream_handler 实现真正的流式 + 事件捕获
+        async with agent.run_stream(
+            user_message,
+            deps=deps,
+            message_history=history,
+            event_stream_handler=event_stream_handler  # 正确签名的处理器
+        ) as stream:
+            
+            # 流式输出文本
+            async for chunk in stream.stream_text(delta=True):
+                assistant_text_chunks.append(chunk)
+                yield chunk
         
-        # 5. Persist Final State (Dehydration)
-        # DeepAgentDeps.todos has been mutated by tools during execution
-        await self.save_deps_state(conversation_id, deps)
+        # 保存最终的助手文本消息
+        if assistant_text_chunks:
+            final_text = "".join(assistant_text_chunks)
+            assistant_msg = Message(
+                conversation_id=conversation_id,
+                step_order=step_order,
+                role='model',
+                content=final_text,
+                tool_calls=None
+            )
+            self.session.add(assistant_msg)
+            self.session.commit()
+        
+        # 4. 保存状态 (Todos等)
+        state = {
+            "todos": [t.model_dump() for t in deps.todos] if deps.todos else [],
+            "uploads": conv.state.get("uploads", {}) if conv.state else {}
+        }
+        self.session.query(Conversation).filter(
+            Conversation.id == conversation_id
+        ).update({"state": state})
+        self.session.commit()
 
     def _get_next_step_order(self, conversation_id: int) -> int:
         """Helper to find the next order ID."""

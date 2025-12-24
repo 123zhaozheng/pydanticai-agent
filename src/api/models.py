@@ -120,7 +120,7 @@ async def create_model(
     return model_config
 
 
-@router.get("/{model_name}", response_model=ModelConfigResponse)
+@router.get("/{model_name:path}", response_model=ModelConfigResponse)
 async def get_model(
     model_name: str,
     db: Session = Depends(get_db)
@@ -132,7 +132,7 @@ async def get_model(
     return model_config
 
 
-@router.put("/{model_name}", response_model=ModelConfigResponse)
+@router.put("/{model_name:path}", response_model=ModelConfigResponse)
 async def update_model(
     model_name: str,
     body: ModelConfigUpdate,
@@ -164,7 +164,7 @@ async def update_model(
     return model_config
 
 
-@router.delete("/{model_name}", status_code=204)
+@router.delete("/{model_name:path}", status_code=204)
 async def delete_model(
     model_name: str,
     db: Session = Depends(get_db)
@@ -189,7 +189,7 @@ async def delete_model(
         del model_manager._model_cache[model_name]
 
 
-@router.post("/{model_name}/set-default", response_model=ModelConfigResponse)
+@router.post("/{model_name:path}/set-default", response_model=ModelConfigResponse)
 async def set_default_model(
     model_name: str,
     db: Session = Depends(get_db)

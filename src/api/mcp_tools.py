@@ -48,7 +48,7 @@ class MCPToolResponse(BaseModel):
     url: str | None
     command: str | None
     input_schema: dict
-    metadata: dict | None
+    tool_metadata: dict | None  # Changed from metadata
     is_active: bool
     is_builtin: bool
     timeout_seconds: int

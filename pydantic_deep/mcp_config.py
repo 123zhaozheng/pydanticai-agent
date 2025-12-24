@@ -40,9 +40,9 @@ def load_mcp_config_from_db() -> Dict[str, Any]:
                         'args': parts[1:] if len(parts) > 1 else [],
                     }
                     
-                    # Add env vars if present in metadata
-                    if tool.metadata and 'env' in tool.metadata:
-                        server_config['env'] = tool.metadata['env']
+                    # Add env vars if present in tool_metadata
+                    if tool.tool_metadata and 'env' in tool.tool_metadata:
+                        server_config['env'] = tool.tool_metadata['env']
                     
                     mcp_servers[tool.name] = server_config
             

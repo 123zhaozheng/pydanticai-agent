@@ -33,7 +33,7 @@ class McpTool(Base):
     # Tool Configuration
     input_schema = Column(JSON, nullable=False, 
                           comment="JSON Schema for tool parameters (MCP inputSchema format)")
-    metadata = Column(JSON, comment="Additional tool metadata (version, tags, etc.)")
+    tool_metadata = Column(JSON, comment="Additional tool metadata (version, tags, etc.)")  # Renamed from metadata
     
     # Status & Management
     is_active = Column(Boolean, default=True, comment="Whether tool is enabled")

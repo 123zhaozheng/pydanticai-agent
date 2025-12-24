@@ -11,6 +11,22 @@ if TYPE_CHECKING:
     from pydantic_deep.deps import DeepAgentDeps
 
 
+_BUILTIN_TOOL_PREFIXES: tuple[str, ...] = (
+    "read_todos",
+    "write_todos",
+    "ls",
+    "read_file",
+    "write_file",
+    "edit_file",
+    "glob",
+    "grep",
+    "execute",
+    "task",
+    "load_skill",
+    "run_skill",
+)
+
+
 async def get_user_tool_permissions(
     user_id: int | str,
     deps: DeepAgentDeps,
@@ -200,6 +216,9 @@ async def filter_tools_by_permission(
     
     This is the prepare_tools function that PydanticAI calls before each LLM request.
     
+    IMPORTANT: Built-in tools (todos, filesystem, subagents, skills) are ALWAYS allowed.
+    Permission filtering only applies to MCP tools added from database.
+    
     Args:
         ctx: RunContext with deps containing user_id
         tool_defs: List of available tool definitions
@@ -208,18 +227,27 @@ async def filter_tools_by_permission(
         Filtered list of tools the user has permission to use
     """
     # If no user_id, return all tools (backward compatible)
-    if not hasattr(ctx.deps, 'user_id') or not ctx.deps.user_id:
+    user_id = getattr(ctx.deps, "user_id", None)
+    if not user_id:
         return tool_defs
     
-    # Get user's permitted tools
-    permitted_tools = await get_user_tool_permissions(ctx.deps.user_id, ctx.deps)
+    # Get user's permitted MCP tools
+    permitted_mcp_tools = await get_user_tool_permissions(user_id, ctx.deps)
+    if not permitted_mcp_tools:
+        return tool_defs
     
     # Filter tool definitions
     filtered = []
+    append = filtered.append
+    builtin_prefixes = _BUILTIN_TOOL_PREFIXES
     for tool_def in tool_defs:
-        # Check if tool name is in permitted set
-        if tool_def.name in permitted_tools:
-            filtered.append(tool_def)
+        name = tool_def.name
+        if name.startswith(builtin_prefixes) or name in permitted_mcp_tools:
+            append(tool_def)
+    
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"[ToolFilter] User {user_id}: {len(filtered)}/{len(tool_defs)} tools allowed")
     
     return filtered
 

@@ -9,7 +9,7 @@ class Conversation(Base):
     """用户会话表 - 存储对话元数据"""
     __tablename__ = "conversations"
 
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     
     # 归属权隔离 (核心字段)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
@@ -47,8 +47,8 @@ class Message(Base):
     """
     __tablename__ = "messages"
 
-    id = Column(BigInteger, primary_key=True, index=True)
-    conversation_id = Column(BigInteger, ForeignKey("conversations.id"), nullable=False, index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False, index=True)
     
     # 消息顺序 (非常重要，用于重组历史)
     step_order = Column(Integer, nullable=False, index=True)

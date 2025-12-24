@@ -26,6 +26,8 @@ from src.models.conversations import (
     Message,
 )
 
+from src.models.llm_models import LLMModelConfig
+
 __all__ = [
     # Tools & Skills
     "McpTool",
