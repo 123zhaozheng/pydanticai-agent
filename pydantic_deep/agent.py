@@ -312,7 +312,7 @@ def create_deep_agent(  # noqa: C901
 
     # Add dynamic system prompts
     @agent.instructions
-    def dynamic_instructions(ctx: Any) -> str:  # pragma: no cover
+    async def dynamic_instructions(ctx: Any) -> str:  # pragma: no cover
         """Generate dynamic instructions based on current state."""
         parts = []
 
@@ -337,7 +337,21 @@ def create_deep_agent(  # noqa: C901
                 parts.append(subagent_prompt)
 
         if include_skills and loaded_skills:
-            skills_prompt = get_skills_system_prompt(ctx.deps, loaded_skills)
+            # Filter skills by user permission before showing in system prompt
+            filtered_skills = loaded_skills
+            if enable_permission_filtering and hasattr(ctx.deps, 'user_id') and ctx.deps.user_id:
+                try:
+                    from pydantic_deep.skill_filter import filter_skills_by_permission
+                    filtered_skills = await filter_skills_by_permission(
+                        loaded_skills, 
+                        ctx.deps.user_id, 
+                        ctx.deps
+                    )
+                except Exception as e:
+                    # Permission check failed, fall back to showing all (backward compatible)
+                    print(f"Skill permission filtering in system prompt failed: {e}")
+            
+            skills_prompt = get_skills_system_prompt(ctx.deps, filtered_skills)
             if skills_prompt:
                 parts.append(skills_prompt)
 

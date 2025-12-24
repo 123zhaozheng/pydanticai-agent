@@ -21,6 +21,11 @@ from src.models.user_management import (
     user_role,
 )
 
+from src.models.conversations import (
+    Conversation,
+    Message,
+)
+
 __all__ = [
     # Tools & Skills
     "McpTool",
@@ -39,4 +44,7 @@ __all__ = [
     "RoleMenu",
     "RoleButton",
     "user_role",
+    # Conversations
+    "Conversation",
+    "Message",
 ]

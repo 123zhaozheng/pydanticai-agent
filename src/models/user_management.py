@@ -42,6 +42,9 @@ class User(Base):
     # Relationships
     roles = relationship("Role", secondary=user_role, back_populates="users")
     
+    # Conversations
+    conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
+    
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
