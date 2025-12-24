@@ -114,8 +114,10 @@ def create_deep_agent(  # noqa: C901
     include_execute: bool | None = None,
     interrupt_on: dict[str, bool] | None = None,
     output_type: OutputSpec[OutputDataT] | None = None,
-    history_processors: Sequence[HistoryProcessor[DeepAgentDeps]] | None = None,
+    history_processors: list[Callable] | None = None,
     enable_permission_filtering: bool = False,
+    enable_history_cleanup: bool = False,
+    enable_mcp_tools: bool = False,
     **agent_kwargs: Any,
 ) -> Agent[DeepAgentDeps, OutputDataT] | Agent[DeepAgentDeps, str]:
     """Create a deep agent with planning, filesystem, subagent, and skills capabilities.
@@ -274,12 +276,34 @@ def create_deep_agent(  # noqa: C901
     # Build base instructions
     base_instructions = instructions or DEFAULT_INSTRUCTIONS
 
-    # Build agent kwargs with optional output_type and history_processors
+    # Build agent creation kwargs
     agent_create_kwargs: dict[str, Any] = {
         "deps_type": DeepAgentDeps,
         "toolsets": all_toolsets,
         "instructions": base_instructions,
+        "history_processors": history_processors or [],
     }
+    
+    # Load MCP tools if enabled
+    if enable_mcp_tools:
+        try:
+            from pydantic_ai.toolsets.fastmcp import FastMCPToolset
+            from pydantic_deep.mcp_config import load_mcp_config_from_db
+            
+            # Load MCP config from database
+            mcp_config = load_mcp_config_from_db()
+            
+            if mcp_config and mcp_config.get('mcpServers'):
+                mcp_toolset = FastMCPToolset(mcp_config)
+                all_toolsets.append(mcp_toolset)
+                print(f"Loaded {len(mcp_config['mcpServers'])} MCP servers")
+        except ImportError:
+            print("FastMCPToolset not available (pydantic-ai version may be outdated)")
+        except Exception as e:
+            print(f"Failed to load MCP tools: {e}")
+    
+    # Update toolsets in kwargs
+    agent_create_kwargs["toolsets"] = all_toolsets
 
     # Determine if any tools require approval (interrupt_on has True values)
     has_interrupt_tools = any(interrupt_on.values())

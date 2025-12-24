@@ -87,7 +87,7 @@ async def get_user_tool_permissions(
         
         # Cache for 5 minutes
         try:
-            await deps.redis.client.setex(cache_key, 300, json.loads(list(tool_names)))
+            await deps.redis.client.setex(cache_key, 300, json.dumps(list(tool_names)))
         except Exception:
             pass  # Redis unavailable, continue without caching
         
