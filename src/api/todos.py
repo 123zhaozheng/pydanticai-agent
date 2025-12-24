@@ -1,0 +1,67 @@
+"""API endpoints for Todos management."""
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+from src.database import get_db
+from src.services.conversation_service import ConversationService
+
+router = APIRouter(prefix="/api/conversations/{conversation_id}/todos", tags=["todos"])
+
+
+class TodoUpdate(BaseModel):
+    """Request model for updating todos (full replacement)."""
+    todos: list[dict] = Field(..., description="Complete list of todos to replace existing ones")
+
+
+@router.get("", response_model=list[dict])
+async def get_todos(
+    conversation_id: int,
+    user_id: int = 1,  # TODO: Get from JWT token
+    db: Session = Depends(get_db)
+):
+    """
+    Get all todos for a conversation.
+    
+    **Response:** List of todo objects with keys: content, status, active_form
+    """
+    service = ConversationService(db)
+    try:
+        todos = await service.get_todos(conversation_id, user_id)
+        return todos
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.put("", response_model=list[dict])
+async def update_todos(
+    conversation_id: int,
+    body: TodoUpdate,
+    user_id: int = 1,  # TODO: Get from JWT token
+    db: Session = Depends(get_db)
+):
+    """
+    Replace entire todos list for a conversation.
+    
+    **WARNING:** Only call when agent is NOT running.
+    
+    **Request Body:**
+    ```json
+    {
+      "todos": [
+        {
+          "content": "任务内容",
+          "status": "pending|in_progress|completed",
+          "active_form": "正在执行的描述"
+        }
+      ]
+    }
+    ```
+    """
+    service = ConversationService(db)
+    try:
+        updated = await service.update_todos(conversation_id, user_id, body.todos)
+        return updated
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

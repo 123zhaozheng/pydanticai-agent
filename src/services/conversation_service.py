@@ -326,3 +326,49 @@ class ConversationService:
             conv.state = new_state
             self.session.add(conv)
             self.session.commit()
+
+    # ===== Todos Management =====
+    
+    async def get_todos(self, conversation_id: int, user_id: int) -> list[dict]:
+        """Get current todos for a conversation."""
+        conv = await self.get_conversation(conversation_id, user_id)
+        if not conv:
+            raise ValueError(f"Conversation {conversation_id} not found")
+        
+        if not conv.state or "todos" not in conv.state:
+            return []
+        
+        return conv.state["todos"]
+    
+    async def update_todos(
+        self, 
+        conversation_id: int, 
+        user_id: int,
+        todos: list[dict]
+    ) -> list[dict]:
+        """
+        Replace entire todos list for a conversation.
+        
+        IMPORTANT: Only call when agent is NOT running.
+        """
+        conv = await self.get_conversation(conversation_id, user_id)
+        if not conv:
+            raise ValueError(f"Conversation {conversation_id} not found")
+        
+        # Validate structure
+        for todo in todos:
+            if not all(k in todo for k in ["content", "status", "active_form"]):
+                raise ValueError("Each todo must have: content, status, active_form")
+            
+            if todo["status"] not in ["pending", "in_progress", "completed"]:
+                raise ValueError(f"Invalid status: {todo['status']}")
+        
+        # Replace entire list
+        new_state = conv.state.copy() if conv.state else {}
+        new_state["todos"] = todos
+        
+        conv.state = new_state
+        self.session.add(conv)
+        self.session.commit()
+        
+        return todos
