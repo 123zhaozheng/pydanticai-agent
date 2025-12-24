@@ -123,3 +123,85 @@ async def get_conversation_messages(
         return messages
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+# ===== Chat Endpoint =====
+
+class ChatRequest(BaseModel):
+    """Request model for chat."""
+    message: str = Field(..., min_length=1, description="User message")
+    model_name: str | None = Field(None, description="Model config name (uses default if not specified)")
+
+
+@router.post("/{conversation_id}/chat")
+async def chat_stream(
+    conversation_id: int,
+    body: ChatRequest,
+    user_id: int = 1,  # TODO: Get from JWT token
+    db: Session = Depends(get_db)
+):
+    """
+    Stream chat with the agent.
+    
+    **Returns:** Server-Sent Events (SSE) stream of text chunks.
+    
+    **Usage:**
+    ```javascript
+    const eventSource = new EventSource('/api/conversations/1/chat');
+    eventSource.onmessage = (event) => {
+        console.log(event.data);  // Text chunk
+    };
+    ```
+    """
+    from fastapi.responses import StreamingResponse
+    from pydantic_deep import create_deep_agent
+    from pydantic_deep.deps import DeepAgentDeps
+    from pydantic_deep.processors.cleanup import deduplicate_stateful_tools_processor
+    from src.services.model_manager import model_manager
+    
+    service = ConversationService(db)
+    
+    # Get model instance
+    try:
+        if body.model_name:
+            model = model_manager.get_model(body.model_name, db)
+        else:
+            model = model_manager.get_default_model(db)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    # Create DeepAgentDeps
+    deps = DeepAgentDeps(user_id=user_id)
+    
+    # Create Agent
+    agent = create_deep_agent(
+        model=model,
+        enable_permission_filtering=True,
+        history_processors=[deduplicate_stateful_tools_processor]
+    )
+    
+    # Streaming generator
+    async def event_generator():
+        try:
+            async for chunk in service.chat_stream(
+                conversation_id=conversation_id,
+                user_message=body.message,
+                user_id=user_id,
+                deps=deps,
+                agent=agent
+            ):
+                # SSE format: data: <content>\n\n
+                yield f"data: {chunk}\n\n"
+        except ValueError as e:
+            yield f"data: [ERROR] {str(e)}\n\n"
+        except Exception as e:
+            yield f"data: [ERROR] {str(e)}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )

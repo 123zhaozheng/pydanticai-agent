@@ -47,4 +47,5 @@ __all__ = [
     # Conversations
     "Conversation",
     "Message",
+    "LLMModelConfig",
 ]
