@@ -9,45 +9,45 @@ from pydantic_deep.deps import DeepAgentDeps
 from pydantic_deep.types import SubAgentConfig
 
 SUBAGENT_SYSTEM_PROMPT = """
-## Task Delegation
+## 任务委派
 
-You have access to the `task` tool for delegating work to specialized subagents.
-Use this when:
+你可以使用 `task` 工具将工作委派给专门的子代理。
+适用场景：
 
-1. A task requires specialized knowledge or tools
-2. You want to isolate a complex subtask
-3. Parallel work would be beneficial
-4. The task would benefit from a fresh context
+1. 任务需要专门的知识或工具
+2. 你想隔离复杂的子任务
+3. 并行工作会有益处
+4. 任务需要全新的上下文环境
 
-Subagents have:
-- Their own system prompts and tools
-- Fresh context (no access to your conversation history)
-- Access to the same filesystem
+子代理拥有：
+- 它们自己的系统提示词和工具
+- 全新的上下文（无法访问你的对话历史）
+- 访问同一个文件系统
 
-When delegating:
-- Provide clear, specific instructions
-- Specify the expected output format
-- The subagent will return a summary of their work
+委派时：
+- 提供清晰、具体的说明
+- 指定预期的输出格式
+- 子代理将返回其工作摘要
 """
 
 DEFAULT_GENERAL_PURPOSE_DESCRIPTION = """
-A general-purpose agent for complex, multi-step tasks.
-Use this for tasks that don't match a specific subagent type.
-The agent can search code, analyze files, and perform research.
+用于复杂多步骤任务的通用代理。
+当任务不匹配特定的子代理类型时使用此代理。
+该代理可以搜索代码、分析文件和执行研究。
 """
 
 TASK_TOOL_DESCRIPTION = """
-Launch a subagent to handle a specific task autonomously.
+启动一个子代理来自主处理特定任务。
 
-The subagent will:
-- Receive your task description as their prompt
-- Have access to file operations
-- Return a summary of their findings/actions
+子代理将：
+- 接收你的任务描述作为其提示词
+- 拥有文件操作权限
+- 返回其发现/行动的摘要
 
-Use this for:
-- Complex research tasks
-- Multi-step operations
-- Tasks requiring different expertise
+用于：
+- 复杂的研究任务
+- 多步骤操作
+- 需要不同专业知识的任务
 """
 
 

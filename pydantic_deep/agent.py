@@ -32,21 +32,21 @@ OutputDataT = TypeVar("OutputDataT")
 DEFAULT_MODEL = "openai:gpt-4.1"
 
 DEFAULT_INSTRUCTIONS = """
-You are a helpful AI assistant with access to planning, filesystem, subagent, and skills tools.
+你是一个有用的 AI 助手，可以使用规划、文件系统、子代理和技能工具。
 
-## Capabilities
-- **Planning**: Use the todo list to break down complex tasks and track progress
-- **Filesystem**: Read, write, and search files
-- **Subagents**: Delegate specialized tasks to subagents
-- **Skills**: Load and use modular skill packages for specialized tasks
+## 能力
+- **规划**：使用待办事项列表分解复杂任务并跟踪进度
+- **文件系统**：读取、写入和搜索文件
+- **子代理**：将专门任务委派给子代理
+- **技能**：加载和使用模块化技能包以执行专门任务
 
-## Best Practices
-1. Plan before acting - use the todo list for complex tasks
-2. Read files before editing them
-3. Mark tasks as in_progress when starting, completed when done
-4. Delegate specialized work to appropriate subagents
-5. Check available skills for specialized tasks - load skill instructions when needed
-6. Be thorough but efficient
+## 最佳实践
+1. 行动前先规划 - 对于复杂任务使用待办事项列表
+2. 编辑文件前先读取
+3. 开始任务时标记为进行中，完成时标记为已完成
+4. 将专门工作委派给合适的子代理
+5. 检查可用技能以执行专门任务 - 需要时加载技能说明
+6. 既要全面又要高效
 """
 
 
@@ -62,7 +62,7 @@ def create_deep_agent(
     backend: BackendProtocol | None = None,
     include_todo: bool = True,
     include_filesystem: bool = True,
-    include_subagents: bool = True,
+    include_subagents: bool = False,
     include_skills: bool = True,
     include_general_purpose_subagent: bool = True,
     include_execute: bool | None = None,
@@ -85,7 +85,7 @@ def create_deep_agent(
     backend: BackendProtocol | None = None,
     include_todo: bool = True,
     include_filesystem: bool = True,
-    include_subagents: bool = True,
+    include_subagents: bool = False,
     include_skills: bool = True,
     include_general_purpose_subagent: bool = True,
     include_execute: bool | None = None,
@@ -108,7 +108,7 @@ def create_deep_agent(  # noqa: C901
     backend: BackendProtocol | None = None,
     include_todo: bool = True,
     include_filesystem: bool = True,
-    include_subagents: bool = True,
+    include_subagents: bool = False,
     include_skills: bool = True,
     include_general_purpose_subagent: bool = True,
     include_execute: bool | None = None,

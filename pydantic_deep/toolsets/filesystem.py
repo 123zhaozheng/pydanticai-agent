@@ -12,35 +12,35 @@ from pydantic_deep.deps import DeepAgentDeps
 from pydantic_deep.types import GrepMatch
 
 FILESYSTEM_SYSTEM_PROMPT = """
-## Filesystem Tools
+## 文件系统工具
 
-You have access to filesystem tools for reading and modifying files:
+你可以使用文件系统工具来读取和修改文件：
 
-- `ls`: List files in a directory
-- `read_file`: Read file content with line numbers
-- `write_file`: Create or overwrite a file
-- `edit_file`: Replace strings in a file
-- `glob`: Find files matching a pattern
-- `grep`: Search for patterns in files
+- `ls`: 列出目录中的文件
+- `read_file`: 读取带行号的文件内容
+- `write_file`: 创建或覆盖文件
+- `edit_file`: 替换文件中的字符串
+- `glob`: 查找匹配模式的文件
+- `grep`: 在文件中搜索模式
 
-Best practices:
-- Always read a file before editing it
-- Use edit_file for small changes, write_file for complete rewrites
-- Use glob to find files before operating on them
-- Be careful with path validation - no '..' or '~' allowed
+最佳实践：
+- 编辑文件前务必先读取
+- 小改动使用 edit_file，重写使用 write_file
+- 操作文件前先用 glob 查找
+- 注意路径验证 - 不允许使用 '..' 或 '~'
 """
 
 SANDBOX_SYSTEM_PROMPT = """
-## Command Execution
+## 命令执行
 
-You also have access to the `execute` tool for running shell commands.
-Use this for:
-- Running tests
-- Installing dependencies
-- Building projects
-- Running scripts
+你还可以使用 `execute` 工具来运行 shell 命令。
+用于：
+- 运行测试
+- 安装依赖
+- 构建项目
+- 运行脚本
 
-Be cautious with destructive commands - they may require approval.
+对破坏性命令要谨慎 - 它们可能需要批准。
 """
 
 

@@ -20,43 +20,42 @@ def load_mcp_config_from_db() -> Dict[str, Any]:
         }
     """
     from src.database import get_db
-    from src.models.tools_skills import McpTool, TransportType
+    from src.models.tools_skills import McpServer, TransportType
     
     db_gen = get_db()
     db_session = next(db_gen)
     
     try:
-        # Query all active MCP tools
-        tools = db_session.query(McpTool).filter(McpTool.is_active == True).all()
+        # Query all active MCP servers
+        servers = db_session.query(McpServer).filter(McpServer.is_active == True).all()
         
         mcp_servers = {}
-        for tool in tools:
-            if tool.transport_type == TransportType.STDIO:
-                # Parse command into program + args
-                parts = tool.command.split() if tool.command else []
-                if parts:
+        for server in servers:
+            if server.transport_type == TransportType.STDIO:
+                # Use explicit command + args
+                if server.command:
                     server_config = {
-                        'command': parts[0],
-                        'args': parts[1:] if len(parts) > 1 else [],
+                        'command': server.command,
+                        'args': server.args or [],
                     }
                     
-                    # Add env vars if present in tool_metadata
-                    if tool.tool_metadata and 'env' in tool.tool_metadata:
-                        server_config['env'] = tool.tool_metadata['env']
+                    # Add env vars if present
+                    if server.env:
+                        server_config['env'] = server.env
                     
-                    mcp_servers[tool.name] = server_config
+                    mcp_servers[server.name] = server_config
             
-            elif tool.transport_type == TransportType.HTTP:
-                if tool.url:
-                    mcp_servers[tool.name] = {
-                        'url': tool.url,
+            elif server.transport_type == TransportType.HTTP:
+                if server.url:
+                    mcp_servers[server.name] = {
+                        'url': server.url,
                         'transport': 'http'
                     }
             
-            elif tool.transport_type == TransportType.SSE:
-                if tool.url:
-                    mcp_servers[tool.name] = {
-                        'url': tool.url,
+            elif server.transport_type == TransportType.SSE:
+                if server.url:
+                    mcp_servers[server.name] = {
+                        'url': server.url,
                         'transport': 'sse'
                     }
         

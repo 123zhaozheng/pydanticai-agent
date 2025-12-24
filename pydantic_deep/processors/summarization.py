@@ -26,26 +26,26 @@ TokenCounter = Callable[[Sequence[ModelMessage]], int]
 
 DEFAULT_SUMMARY_PROMPT = (
     "<role>\n"
-    "Context Extraction Assistant\n"
+    "上下文提取助手\n"
     "</role>\n\n"
     "<primary_objective>\n"
-    "Extract the most relevant context from the conversation history below.\n"
+    "从下方的对话历史中提取最相关的上下文。\n"
     "</primary_objective>\n\n"
     "<objective_information>\n"
-    "You're nearing the token limit and must extract key information. "
-    "This context will overwrite the conversation history, so include only "
-    "the most important information.\n"
+    "你即将达到 token 限制，必须提取关键信息。"
+    "此上下文将覆盖对话历史，因此只包含"
+    "最重要的信息。\n"
     "</objective_information>\n\n"
     "<instructions>\n"
-    "The conversation history will be replaced with your extracted context. "
-    "Extract and record the most important context. Focus on information "
-    "relevant to the overall goal. Avoid repeating completed actions.\n"
+    "对话历史将被替换为你提取的上下文。"
+    "提取并记录最重要的上下文。重点关注"
+    "与总体目标相关的信息。避免重复已完成的操作。\n"
     "</instructions>\n\n"
-    "Read the message history carefully. Think about what is most important "
-    "to preserve. Extract only essential context.\n\n"
-    "Respond ONLY with the extracted context. No additional information.\n\n"
+    "仔细阅读消息历史。思考什么是最重要的"
+    "需要保留的信息。只提取核心上下文。\n\n"
+    "仅回复提取的上下文。不要包含其他信息。\n\n"
     "<messages>\n"
-    "Messages to summarize:\n"
+    "需要总结的消息：\n"
     "{messages}\n"
     "</messages>"
 )
@@ -367,8 +367,8 @@ class SummarizationProcessor:
             self._summarization_agent = Agent(
                 self.model,
                 instructions=(
-                    "You are a context summarization assistant. "
-                    "Extract the most important information from conversations."
+                    "你是一个上下文总结助手。"
+                    "从对话中提取最重要的信息。"
                 ),
             )
         return self._summarization_agent

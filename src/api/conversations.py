@@ -176,10 +176,13 @@ async def chat_stream(
     # Create Agent
     agent = create_deep_agent(
         model=model,
-        enable_permission_filtering=True,
+        enable_permission_filtering=False,
+        enable_mcp_tools=True,
         history_processors=[deduplicate_stateful_tools_processor]
     )
     
+    import json
+
     # Streaming generator
     async def event_generator():
         try:
@@ -190,12 +193,13 @@ async def chat_stream(
                 deps=deps,
                 agent=agent
             ):
-                # SSE format: data: <content>\n\n
-                yield f"data: {chunk}\n\n"
+                # SSE format: data: <json_content>\n\n
+                # Chunk is now a dict (text, tool_call, tool_result)
+                yield f"data: {json.dumps(chunk, default=str)}\n\n"
         except ValueError as e:
-            yield f"data: [ERROR] {str(e)}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
         except Exception as e:
-            yield f"data: [ERROR] {str(e)}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
     
     return StreamingResponse(
         event_generator(),

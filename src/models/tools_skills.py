@@ -15,47 +15,47 @@ class TransportType(str, enum.Enum):
     STDIO = "stdio"
 
 
-class McpTool(Base):
-    """MCP Tool Registry - External tools following MCP protocol."""
-    __tablename__ = "mcp_tools"
+class McpServer(Base):
+    """MCP Server Registry - Configuration for MCP servers."""
+    __tablename__ = "mcp_servers"
     
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), unique=True, nullable=False, index=True, 
-                  comment="Tool identifier (e.g., 'browser_navigate')")
-    description = Column(Text, comment="Human-readable description of tool functionality")
+                  comment="Server identifier (e.g., 'filesystem-server')")
+    description = Column(Text, comment="Human-readable description")
     
     # MCP Protocol Fields
     transport_type = Column(Enum(TransportType), nullable=False, default=TransportType.HTTP,
                            comment="MCP transport protocol")
     url = Column(String(500), comment="Endpoint URL for HTTP/SSE transport")
-    command = Column(Text, comment="Command for stdio transport (e.g., 'node server.js')")
+    command = Column(Text, comment="Command for stdio transport")
+    args = Column(JSON, comment="Arguments for stdio transport (list of strings)")
+    env = Column(JSON, comment="Environment variables for stdio transport (dict)")
     
-    # Tool Configuration
-    input_schema = Column(JSON, nullable=False, 
-                          comment="JSON Schema for tool parameters (MCP inputSchema format)")
-    tool_metadata = Column(JSON, comment="Additional tool metadata (version, tags, etc.)")  # Renamed from metadata
+    # Configuration
+    server_metadata = Column(JSON, comment="Additional server metadata")
     
     # Status & Management
-    is_active = Column(Boolean, default=True, comment="Whether tool is enabled")
+    is_active = Column(Boolean, default=True, comment="Whether server is enabled")
     is_builtin = Column(Boolean, default=False, 
-                       comment="Whether tool is built-in (filesystem, todo, etc.)")
-    timeout_seconds = Column(Integer, default=120, comment="Request timeout in seconds")
+                       comment="Whether server is built-in")
+    timeout_seconds = Column(Integer, default=120, comment="Connection/Request timeout")
     
     # Audit Fields
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     created_by = Column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
-                       comment="User ID who registered the tool")
+                       comment="User ID who registered the server")
     
     # Relationships
     creator = relationship("User", foreign_keys=[created_by])
-    role_permissions = relationship("RoleToolPermission", back_populates="tool", 
+    role_permissions = relationship("RoleToolPermission", back_populates="server", 
                                    cascade="all, delete-orphan")
-    department_permissions = relationship("DepartmentToolPermission", back_populates="tool",
+    department_permissions = relationship("DepartmentToolPermission", back_populates="server",
                                          cascade="all, delete-orphan")
     
     def __repr__(self):
-        return f"<McpTool {self.name}>"
+        return f"<McpServer {self.name}>"
 
 
 class Skill(Base):
@@ -103,31 +103,31 @@ class Skill(Base):
 
 
 class RoleToolPermission(Base):
-    """Role's MCP Tool Permissions - Defines which roles can access which tools."""
+    """Role's MCP Server Permissions - Defines which roles can access which servers."""
     __tablename__ = "role_tool_permissions"
     
     id = Column(BigInteger, primary_key=True, index=True)
     role_id = Column(Integer, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False)
-    tool_id = Column(BigInteger, ForeignKey("mcp_tools.id", ondelete="CASCADE"), nullable=False)
+    server_id = Column(BigInteger, ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=False)
     
     # Permission Types
-    can_use = Column(Boolean, default=True, comment="Can execute the tool")
-    can_configure = Column(Boolean, default=False, comment="Can modify tool settings")
+    can_use = Column(Boolean, default=True, comment="Can use tools from this server")
+    can_configure = Column(Boolean, default=False, comment="Can modify server config")
     
     # Audit
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
     role = relationship("Role", back_populates="tool_permissions")
-    tool = relationship("McpTool", back_populates="role_permissions")
+    server = relationship("McpServer", back_populates="role_permissions")
     
     # Composite unique constraint
     __table_args__ = (
-        {"comment": "Role-Tool Permission Mapping"},
+        {"comment": "Role-Server Permission Mapping"},
     )
     
     def __repr__(self):
-        return f"<RoleToolPermission role_id={self.role_id} tool_id={self.tool_id}>"
+        return f"<RoleToolPermission role_id={self.role_id} server_id={self.server_id}>"
 
 
 class RoleSkillPermission(Base):
@@ -159,30 +159,30 @@ class RoleSkillPermission(Base):
 
 
 class DepartmentToolPermission(Base):
-    """Department-level Tool Access Control - Overrides role permissions within department."""
+    """Department-level Server Access Control - Overrides role permissions within department."""
     __tablename__ = "department_tool_permissions"
     
     id = Column(BigInteger, primary_key=True, index=True)
     department_id = Column(Integer, ForeignKey("departments.id", ondelete="CASCADE"), 
                           nullable=False)
-    tool_id = Column(BigInteger, ForeignKey("mcp_tools.id", ondelete="CASCADE"), nullable=False)
+    server_id = Column(BigInteger, ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=False)
     
     is_allowed = Column(Boolean, default=True, 
-                       comment="Whether department can access this tool")
+                       comment="Whether department can access this server")
     
     # Audit
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
     department = relationship("Department", back_populates="tool_permissions")
-    tool = relationship("McpTool", back_populates="department_permissions")
+    server = relationship("McpServer", back_populates="department_permissions")
     
     __table_args__ = (
-        {"comment": "Department-level Tool Access Control"},
+        {"comment": "Department-level Server Access Control"},
     )
     
     def __repr__(self):
-        return f"<DepartmentToolPermission dept_id={self.department_id} tool_id={self.tool_id}>"
+        return f"<DepartmentToolPermission dept_id={self.department_id} server_id={self.server_id}>"
 
 
 class DepartmentSkillPermission(Base):

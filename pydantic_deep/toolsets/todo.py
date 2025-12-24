@@ -28,54 +28,54 @@ class TodoItem(BaseModel):
 
 
 TODO_TOOL_DESCRIPTION = """
-Use this tool to create and manage a structured task list for your current session.
-This helps you track progress, organize complex tasks, and demonstrate thoroughness.
+使用此工具为您当前的会话创建和管理结构化的任务列表。
+这有助于您跟踪进度、组织复杂任务并展示您的严谨性。
 
-## When to Use This Tool
-Use this tool in these scenarios:
-1. Complex multi-step tasks - When a task requires 3 or more distinct steps
-2. Non-trivial tasks - Tasks that require careful planning
-3. User provides multiple tasks - When users provide a list of things to be done
-4. After receiving new instructions - Capture user requirements as todos
-5. When starting a task - Mark it as in_progress BEFORE beginning work
-6. After completing a task - Mark it as completed immediately
+## 何时使用此工具
+在以下场景使用：
+1. 复杂的多步骤任务 - 当一个任务需要3个或更多步骤时
+2. 非平凡任务 - 需要仔细规划的任务
+3. 用户提供多个任务 - 当用户提供一系列待办事项时
+4. 收到新指令后 - 将用户需求捕捉为待办事项
+5. 开始任务时 - 在开始工作前将其标记为进行中 (in_progress)
+6. 完成任务后 - 立即将其标记为已完成 (completed)
 
-## Task States
-- pending: Task not yet started
-- in_progress: Currently working on (limit to ONE at a time)
-- completed: Task finished successfully
+## 任务状态
+- pending: 任务尚未开始
+- in_progress: 当前正在进行 (限制一次只能有一个)
+- completed: 任务成功完成
 
-## Important
-- Exactly ONE task should be in_progress at any time
-- Mark tasks complete IMMEDIATELY after finishing (don't batch completions)
-- If you encounter blockers, keep the task as in_progress and create a new task for the blocker
+## 重要
+-任何时候只能有 **一个** 任务处于 in_progress 状态
+- 完成任务后 **立即** 标记为完成 (不要批量完成)
+- 如果遇到阻碍，保持任务为 in_progress 并为阻碍创建一个新任务
 """
 
 TODO_SYSTEM_PROMPT = """
-## Task Management
+## 任务管理
 
-You have access to the `write_todos` tool to track your tasks.
-Use it frequently to:
-- Plan complex tasks before starting
-- Show progress to the user
-- Keep track of what's done and what's pending
+你可以使用 `write_todos` 工具来跟踪你的任务。
+经常使用它来：
+- 在开始前规划复杂任务
+- 向用户展示进度
+- 跟踪已完成和待处理的事项
 
-When working on tasks:
-1. Break down complex tasks into smaller steps
-2. Mark exactly one task as in_progress at a time
-3. Mark tasks as completed immediately after finishing
+在处理任务时：
+1. 将复杂任务分解为更小的步骤
+2. 一次只标记一个任务为进行中
+3. 完成后立即标记任务为已完成
 """
 
 
 READ_TODO_DESCRIPTION = """
-Read the current todo list state.
+读取当前的待办事项列表状态。
 
-Use this tool to check the current status of all tasks before:
-- Deciding what to work on next
-- Updating task statuses
-- Reporting progress to the user
+使用此工具在以下情况前检查所有任务的当前状态：
+- 决定接下来做什么
+- 更新任务状态
+- 向用户报告进度
 
-Returns all todos with their current status (pending, in_progress, completed).
+返回所有待办事项及其当前状态 (pending, in_progress, completed)。
 """
 
 

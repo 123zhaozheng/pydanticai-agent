@@ -16,7 +16,7 @@ class Base(DeclarativeBase):
 
 # Import models to register them with SQLAlchemy
 from src.models.tools_skills import (  # noqa: E402
-    McpTool,
+    McpServer,
     Skill,
     RoleToolPermission,
     RoleSkillPermission,

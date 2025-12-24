@@ -1,7 +1,7 @@
 """Models package - exports all database models."""
 
 from src.models.tools_skills import (
-    McpTool,
+    McpServer,
     Skill,
     RoleToolPermission,
     RoleSkillPermission,
@@ -30,7 +30,7 @@ from src.models.llm_models import LLMModelConfig
 
 __all__ = [
     # Tools & Skills
-    "McpTool",
+    "McpServer",
     "Skill",
     "RoleToolPermission",
     "RoleSkillPermission",

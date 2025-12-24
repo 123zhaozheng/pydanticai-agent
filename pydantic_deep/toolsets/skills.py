@@ -192,10 +192,10 @@ def get_skills_system_prompt(
         return ""
 
     lines = [
-        "## Available Skills",
+        "## 可用技能",
         "",
-        "You have access to skills that extend your capabilities. "
-        "Use `list_skills` to see available skills and `load_skill` to load instructions.",
+        "您可以访问扩展您能力的技能。",
+        "使用 `list_skills` 查看可用技能，使用 `load_skill` 加载技能说明。",
         "",
     ]
 

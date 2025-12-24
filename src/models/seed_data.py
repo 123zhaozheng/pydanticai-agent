@@ -1,140 +1,35 @@
-"""Seed data for MCP tools, skills, and permissions."""
+"""Seed data for MCP servers, skills, and permissions."""
 
 from sqlalchemy.orm import Session
-from src.models.tools_skills import McpTool, Skill, RoleToolPermission, RoleSkillPermission
+from src.models.tools_skills import McpServer, Skill, RoleToolPermission, RoleSkillPermission
 
 
 def seed_builtin_tools(db: Session) -> None:
-    """Create built-in tools (filesystem, todo, etc.)."""
+    """Create example built-in MCP server."""
     
-    builtin_tools = [
+    # In the new architecture, we register Servers, not individual tools.
+    # Builtin tools (fs, todo) are added by the agent, not via MCP Server table usually.
+    # We add an example MCP server here.
+    
+    builtin_servers = [
         {
-            "name": "read_file",
-            "description": "Read file content with line numbers",
-            "transport_type": "http",
-            "url": "http://localhost:8080/tools/read_file",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "File path to read"},
-                    "offset": {"type": "integer", "description": "Starting line (0-indexed)"},
-                    "limit": {"type": "integer", "description": "Max lines to read"}
-                },
-                "required": ["path"]
-            },
-            "is_builtin": True,
+            "name": "example-stdio-server",
+            "description": "Example STDIO based MCP server",
+            "transport_type": "stdio",
+            "command": "python",
+            "args": ["-m", "mcp_test_server"],
+            "env": {"DEBUG": "1"},
+            "is_builtin": False,
             "is_active": True,
-        },
-        {
-            "name": "write_file",
-            "description": "Write content to a file (creates or overwrites)",
-            "transport_type": "http",
-            "url": "http://localhost:8080/tools/write_file",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "File path to write"},
-                    "content": {"type": "string", "description": "Content to write"}
-                },
-                "required": ["path", "content"]
-            },
-            "is_builtin": True,
-            "is_active": True,
-        },
-        {
-            "name": "edit_file",
-            "description": "Edit a file by replacing strings",
-            "transport_type": "http",
-            "url": "http://localhost:8080/tools/edit_file",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string"},
-                    "old_string": {"type": "string"},
-                    "new_string": {"type": "string"},
-                    "replace_all": {"type": "boolean", "default": False}
-                },
-                "required": ["path", "old_string", "new_string"]
-            },
-            "is_builtin": True,
-            "is_active": True,
-        },
-        {
-            "name": "execute",
-            "description": "Execute a shell command",
-            "transport_type": "http",
-            "url": "http://localhost:8080/tools/execute",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "command": {"type": "string", "description": "Shell command to execute"},
-                    "timeout": {"type": "integer", "description": "Timeout in seconds", "default": 120}
-                },
-                "required": ["command"]
-            },
-            "is_builtin": True,
-            "is_active": True,
-        },
-        {
-            "name": "ls",
-            "description": "List files and directories",
-            "transport_type": "http",
-            "url": "http://localhost:8080/tools/ls",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Directory path", "default": "/"}
-                }
-            },
-            "is_builtin": True,
-            "is_active": True,
-        },
-        {
-            "name": "glob",
-            "description": "Find files matching a glob pattern",
-            "transport_type": "http",
-            "url": "http://localhost:8080/tools/glob",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "pattern": {"type": "string", "description": "Glob pattern (e.g., '**/*.py')"},
-                    "path": {"type": "string", "description": "Base directory", "default": "/"}
-                },
-                "required": ["pattern"]
-            },
-            "is_builtin": True,
-            "is_active": True,
-        },
-        {
-            "name": "grep",
-            "description": "Search for a regex pattern in files",
-            "transport_type": "http",
-            "url": "http://localhost:8080/tools/grep",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "pattern": {"type": "string", "description": "Regex pattern to search"},
-                    "path": {"type": "string", "description": "File or directory to search"},
-                    "glob_pattern": {"type": "string", "description": "Glob pattern to filter files"},
-                    "output_mode": {
-                        "type": "string",
-                        "enum": ["content", "files_with_matches", "count"],
-                        "default": "files_with_matches"
-                    }
-                },
-                "required": ["pattern"]
-            },
-            "is_builtin": True,
-            "is_active": True,
-        },
+        }
     ]
     
-    for tool_data in builtin_tools:
-        # Check if tool already exists
-        existing = db.query(McpTool).filter_by(name=tool_data["name"]).first()
+    for server_data in builtin_servers:
+        # Check if server already exists
+        existing = db.query(McpServer).filter_by(name=server_data["name"]).first()
         if not existing:
-            tool = McpTool(**tool_data)
-            db.add(tool)
+            server = McpServer(**server_data)
+            db.add(server)
     
     db.commit()
 
@@ -187,23 +82,23 @@ def seed_example_skills(db: Session) -> None:
 
 
 def seed_admin_permissions(db: Session, admin_role_id: int) -> None:
-    """Grant admin role all tool and skill permissions.
+    """Grant admin role all server and skill permissions.
     
     Args:
         db: Database session
         admin_role_id: ID of the admin role (usually 1)
     """
-    # Grant all tool permissions to admin
-    tools = db.query(McpTool).all()
-    for tool in tools:
+    # Grant all server permissions to admin
+    servers = db.query(McpServer).all()
+    for server in servers:
         existing = db.query(RoleToolPermission).filter_by(
             role_id=admin_role_id,
-            tool_id=tool.id
+            server_id=server.id
         ).first()
         if not existing:
             perm = RoleToolPermission(
                 role_id=admin_role_id,
-                tool_id=tool.id,
+                server_id=server.id,
                 can_use=True,
                 can_configure=True
             )
@@ -242,7 +137,7 @@ def seed_all(db: Session) -> None:
         finally:
             db.close()
     """
-    print("📦 Seeding built-in tools...")
+    print("📦 Seeding built-in servers...")
     seed_builtin_tools(db)
     
     print("📦 Seeding example skills...")

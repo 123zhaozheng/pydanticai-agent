@@ -12,13 +12,22 @@ from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
     TextPart,
+    TextPartDelta,
     UserPromptPart,
     ToolCallPart,
     ToolReturnPart,
 )
+from pydantic_ai import (
+    PartStartEvent,
+    PartDeltaEvent,
+    FunctionToolCallEvent,
+    FunctionToolResultEvent,
+    AgentRunResultEvent,
+    FinalResultEvent
+)
 
 from src.models.conversations import Conversation, Message
-from src.models.tools_skills import McpTool
+from src.models.tools_skills import McpServer
 from pydantic_deep.deps import DeepAgentDeps
 from pydantic_deep.types import Todo
 
@@ -35,15 +44,14 @@ class ConversationService:
         user_id: int,
         deps: DeepAgentDeps,
         agent: Any,  # Typed Agent[DeepAgentDeps, str]
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[dict, None]:
         """
-        Execute agent with streaming and real-time event-based persistence.
+        Execute agent with streaming using run_stream_events for full control.
         
-        Orchestration Flow:
-        1. Load History & State (Hydration)
-        2. Stream Events & Persist in Real-Time
-        3. Save Final State (Dehydration)
-        4. Yield Text to UI
+        Yields structured events:
+        - {"type": "text", "content": "..."}
+        - {"type": "tool_call", "tool_name": "...", "args": ...}
+        - {"type": "tool_result", "tool_name": "...", "result": ...}
         """
         # 1. Validation & Hydration
         conv = await self.get_conversation(conversation_id, user_id)
@@ -73,74 +81,148 @@ class ConversationService:
         self.session.commit()
         step_order += 1
         
-        # 3. 真正的流式输出 + 完整工具事件捕获
-        from pydantic_ai import (
-            FunctionToolCallEvent,
-            FunctionToolResultEvent,
-            RunContext,
+        # 3. Stream Events using PydanticAI's run_stream_events
+        from pydantic_ai.messages import (
+            ModelRequest, ModelResponse, UserPromptPart, TextPart, ToolCallPart, ToolReturnPart
         )
-        from collections.abc import AsyncIterable
+        from pydantic_ai import (
+            AgentRunResultEvent, 
+            PartStartEvent, 
+            PartDeltaEvent, 
+            FunctionToolCallEvent, 
+            FunctionToolResultEvent
+        )
         
         assistant_text_chunks = []
-        current_tool_calls = []  # 收集当前轮次的工具调用
+        current_tool_calls = []  # To batch tool calls for a single model message
+        tool_names = {} # Map tool_call_id -> tool_name
         
-        # 事件流处理器 - 正确签名: (ctx, event_stream) -> None
-        async def event_stream_handler(ctx: RunContext, event_stream: AsyncIterable):
-            nonlocal step_order, current_tool_calls
-            
-            async for event in event_stream:
-                # A. 工具调用事件 - 保存工具调用信息
-                if isinstance(event, FunctionToolCallEvent):
-                    tool_call = {
-                        "name": event.part.tool_name,
-                        "args": event.part.args,
-                        "tool_call_id": event.part.tool_call_id
-                    }
-                    current_tool_calls.append(tool_call)
-                
-                # B. 工具返回事件 - 保存到数据库
-                elif isinstance(event, FunctionToolResultEvent):
-                    # 先保存模型的工具调用消息
-                    if current_tool_calls:
-                        model_msg = Message(
-                            conversation_id=conversation_id,
-                            step_order=step_order,
-                            role='model',
-                            content="",
-                            tool_calls=current_tool_calls
-                        )
-                        self.session.add(model_msg)
-                        self.session.commit()
-                        step_order += 1
-                        current_tool_calls = []
-                    
-                    # 保存工具返回
-                    tool_return_msg = Message(
-                        conversation_id=conversation_id,
-                        step_order=step_order,
-                        role='tool-return',
-                        tool_name=event.tool_name,
-                        tool_call_id=event.tool_call_id,
-                        tool_return_content=str(event.result.content) if hasattr(event.result, 'content') else str(event.result)
-                    )
-                    self.session.add(tool_return_msg)
-                    self.session.commit()
-                    step_order += 1
-        
-        # 使用 run_stream + event_stream_handler 实现真正的流式 + 事件捕获
-        async with agent.run_stream(
+        # FIX: run_stream_events returns an AsyncGenerator, not a context manager
+        stream = agent.run_stream_events(
             user_message,
             deps=deps,
-            message_history=history,
-            event_stream_handler=event_stream_handler  # 正确签名的处理器
-        ) as stream:
+            message_history=history
+        )
             
-            # 流式输出文本
-            async for chunk in stream.stream_text(delta=True):
-                assistant_text_chunks.append(chunk)
-                yield chunk
+        async for event in stream:
+            # Debug logging
+            import datetime
+            with open("debug_events.log", "a", encoding="utf-8") as f:
+                f.write(f"{datetime.datetime.now()} Event: {type(event)} {event}\n")
+            
+            # --- Text Generation ---
+            if isinstance(event, PartStartEvent):
+                if isinstance(event.part, TextPart):
+                    chunk = event.part.content
+                    if chunk:
+                        assistant_text_chunks.append(chunk)
+                        yield {
+                            "type": "text",
+                            "content": chunk
+                        }
+                        
+            elif isinstance(event, PartDeltaEvent):
+                if isinstance(event.delta, TextPartDelta):
+                    chunk = event.delta.content_delta
+                    if chunk:
+                        assistant_text_chunks.append(chunk)
+                        yield {
+                            "type": "text",
+                            "content": chunk
+                        }
+                        
+            # --- Tool Call ---
+            elif isinstance(event, FunctionToolCallEvent):
+                tool_call = {
+                    "name": event.part.tool_name,
+                    "args": event.part.args,
+                    "tool_call_id": event.part.tool_call_id
+                }
+                current_tool_calls.append(tool_call)
+                tool_names[tool_call["tool_call_id"]] = tool_call["name"]
+                
+                yield {
+                    "type": "tool_call",
+                    "tool_name": tool_call["name"],
+                    "args": tool_call["args"],
+                    "tool_call_id": tool_call["tool_call_id"]
+                }
+            
+            # --- Tool Result ---
+            elif isinstance(event, FunctionToolResultEvent):
+                # 1. Prepare structured result for JSON output
+                # Try to extract 'content' from ToolReturnPart or similar objects
+                raw_result = event.result
+                
+                # Check for 'content' attribute (like in ToolReturnPart examples from user)
+                if hasattr(raw_result, "content"):
+                    serialized_result = raw_result.content
+                # If it's a dict with a 'content' key, also use that
+                elif isinstance(raw_result, dict) and "content" in raw_result:
+                    serialized_result = raw_result["content"]
+                # Otherwise, fallback to model_dump/dict/as-is logic
+                elif hasattr(raw_result, "model_dump"):
+                    serialized_result = raw_result.model_dump()
+                elif hasattr(raw_result, "dict"):
+                    serialized_result = raw_result.dict()
+                else:
+                    serialized_result = raw_result
+
+                # Get tool name from mapping
+                tool_name = tool_names.get(event.tool_call_id, "unknown")
+                
+                # Yield result to stream as structured data
+                yield {
+                    "type": "tool_result",
+                    "tool_name": tool_name,
+                    "result": serialized_result, 
+                    "tool_call_id": event.tool_call_id
+                }
+
+                # 2. Before saving result, save the preceding Model Message with Tool Calls
+                if current_tool_calls:
+                    model_msg = Message(
+                        conversation_id=conversation_id,
+                        step_order=step_order,
+                        role='model',
+                        content="".join(assistant_text_chunks) if assistant_text_chunks else "",
+                        tool_calls=current_tool_calls
+                    )
+                    self.session.add(model_msg)
+                    self.session.commit()
+                    step_order += 1
+                    
+                    # Reset accumulators
+                    assistant_text_chunks = [] 
+                    current_tool_calls = []
+
+                # 3. Persist the Tool Return Message
+                # For DB storage, we store the JSON string of the structured result
+                import json
+                try:
+                    db_ret_content = json.dumps(serialized_result, ensure_ascii=False)
+                except (TypeError, ValueError):
+                    db_ret_content = str(raw_result)
+
+                tool_msg = Message(
+                    conversation_id=conversation_id,
+                    step_order=step_order,
+                    role='tool-return',
+                    tool_name=tool_name,
+                    tool_call_id=event.tool_call_id,
+                    tool_return_content=db_ret_content
+                )
+                self.session.add(tool_msg)
+                self.session.commit()
+                step_order += 1
+
+            # End of stream loop
         
-        # 保存最终的助手文本消息
+        # 4. Save Final Assistant Message (if any text remains or was generated after tools)
+        # Note: If the last act was a tool call, and then it finished, we might still have text.
+        # But usually `AgentRunResultEvent` signifies end. 
+        # We need to capture the final text response.
+        
         if assistant_text_chunks:
             final_text = "".join(assistant_text_chunks)
             assistant_msg = Message(
@@ -153,7 +235,8 @@ class ConversationService:
             self.session.add(assistant_msg)
             self.session.commit()
         
-        # 4. 保存状态 (Todos等)
+        # 5. Save State (Todos etc)
+        # Because we passed `deps` to the agent, it was mutated in place.
         state = {
             "todos": [t.model_dump() for t in deps.todos] if deps.todos else [],
             "uploads": conv.state.get("uploads", {}) if conv.state else {}
