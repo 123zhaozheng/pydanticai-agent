@@ -1,183 +1,138 @@
 """Cleanup processors for message history."""
 
 from __future__ import annotations
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from pydantic_ai import RunContext
 from pydantic_ai.messages import (
-    ModelMessage, 
-    ModelRequest, 
-    ModelResponse, 
-    ToolCallPart, 
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    ToolCallPart,
     ToolReturnPart
 )
+from pydantic_ai.tools import RunContext
 
-from pydantic_deep.deps import DeepAgentDeps
+if TYPE_CHECKING:
+    from pydantic_deep.deps import DeepAgentDeps
 
 
 def deduplicate_stateful_tools_processor(
-    ctx: RunContext[DeepAgentDeps], 
+    ctx: RunContext[Any],  # RunContext with Any to avoid circular import
     messages: list[ModelMessage]
 ) -> list[ModelMessage]:
     """
-    Remove messages related to stateful tools (todos, skills) 
-    whose effects are already reflected in the system prompt.
-    
-    This reduces token usage and prevents "duplicate context" confusion 
-    where the LLM sees both the history of changes and the final state.
-    
-    Tools filtered:
-    - write_todos
-    - read_todos
-    - load_skill
-    - list_skills
-    """
-    
-    # Tools to filter
-    # These tools modify state that is fully visible in the System Prompt
-    TOOLS_TO_FILTER = {
-        "write_todos", 
-        "read_todos", 
-        "load_skill", 
-        "list_skills"
-    }
-    
-    new_messages: list[ModelMessage] = []
-    
-    # Strategy:
-    # 1. Identify all messages that contain stateful tool calls/returns.
-    # 2. Find the index of the *last* group of such calls.
-    # 3. Everything before that last group gets filtered.
-    # 4. The last group and anything after it is preserved.
-    
-    # Track indices of messages containing our target tools
-    target_tool_indices: set[int] = set()
-    
-    for i, msg in enumerate(messages):
-        has_target_tool = False
-        if isinstance(msg, ModelResponse):
-            for part in msg.parts:
-                if isinstance(part, ToolCallPart) and part.tool_name in TOOLS_TO_FILTER:
-                    has_target_tool = True
-                    break
-        elif isinstance(msg, ModelRequest):
-            for part in msg.parts:
-                if isinstance(part, ToolReturnPart) and part.tool_name in TOOLS_TO_FILTER:
-                    has_target_tool = True
-                    break
-        
-        if has_target_tool:
-            target_tool_indices.add(i)
-            
-    # If no such tools found, return as is
-    if not target_tool_indices:
-        return messages
-        
-    # Find the start index of the "last group"
-    # We define a "group" loosely here, but for simplicity/safety, let's just say:
-    # We want to keep the *very last* interaction involving these tools.
-    # So we find the max index.
-    last_interaction_index = max(target_tool_indices)
-    
-    # However, a tool interaction is usually a pair (Call -> Return).
-    # If the last thing is a Return, we probably want to keep its matching Call too.
-    # Or simpler: just keep the last N *messages* regardless, as a safety buffer?
-    # User asked: "Keep the last group... remove all above".
-    
-    # Safe approach:
-    # Iterate through messages.
-    # If a message index is < last_interaction_index AND contains a target tool => Filter it.
-    # If a message index is >= last_interaction_index => Keep it (it's the last one).
-    # Wait, "last group" implies if I did: Todo1, Todo2, Todo3. I want to keep Todo3.
-    # So finding 'max' is correct for the very last one.
-    
-    # Let's verify if the last interaction is a Call or Result.
-    # If it's a Result, we likely need to keep the preceding Call too which might be at index-1.
-    # To be robust, let's set the "survival threshold" at the last 2-3 messages 
-    # OR simply use the logic: "Filter unless it is the last occurrence".
-    
-    # Refined Logic:
-    # We will filter a tool part IF:
-    # It is NOT part of the last interaction sequence.
-    # But figuring out "sequence" boundaries hard.
-    
-    # Let's stick to the user's specific request combined with my buffer Logic.
-    # User said: "Keep the last set".
-    # My "Buffer = 2" logic already does "Keep the last set" if the last set is at the end.
-    # But if the last set was 5 messages ago, Buffer=2 would delete it? No, Buffer=2 preserves the TAIL.
-    # If the user means "Keep the last occurrence of Todo even if it was 10 turns ago", that's different.
-    # Assuming user means: "Allow one active/recent stateful tool interaction to remain in history, delete older ones."
-    
-    # Let's count how many times these tools appear.
-    # We want to keep the tool parts only if they belong to the *last* time they appear in the list.
-    
-    # Actually, simpler interpretation of "Last Group":
-    # Just find the index of the last message that has one of these tools.
-    # Let's call it `last_idx`.
-    # Any filtering logic ONLY applies to messages where index < last_idx - 1 (give it a small window of context).
-    # If message index is close to `last_idx`, we preserve it.
-    
-    last_target_idx = -1
-    if target_tool_indices:
-        last_target_idx = max(target_tool_indices)
-        
-    for i, msg in enumerate(messages):
-        # Determine if we should preserve this message's tool parts
-        # We preserve if this message is part of the "last interaction"
-        # We define "last interaction" as the message at last_target_idx AND its immediate predecessor (the Call)
-        # So if i >= last_target_idx - 1, we keep it.
-        
-        should_preserve = False
-        if target_tool_indices:
-             if i >= last_target_idx - 1:
-                 should_preserve = True
-        
-        # If we should preserve, just append and continue
-        if should_preserve:
-            new_messages.append(msg)
-            continue
+    Remove old tool calls and returns for stateful tools, but keep recent ones.
 
-        # Otherwise, perform filtering as before
+    These tools modify state that is fully reflected in the system prompt,
+    so keeping their OLD history in messages wastes tokens and creates confusion.
+
+    Tools filtered (keep only last 2 occurrences):
+    - write_todos: Current todos are shown in system prompt
+    - read_todos: Same information as system prompt
+    - list_skills: Skill list is shown in system prompt
+
+    Tools NOT filtered (preserved):
+    - load_skill: Full instructions are only in conversation history, NOT in system prompt
+    - read_skill_resource: Resource content is only in conversation history
+
+    Strategy:
+    1. Track occurrences of filtered tools
+    2. Keep only the LAST 2 occurrences of each filtered tool
+    3. Remove older occurrences to save tokens
+    4. This prevents infinite loops while still cleaning up old history
+    """
+
+    # Tools to filter (keep only recent ones)
+    # Note: load_skill is NOT here because its full instructions are not in system prompt
+    TOOLS_TO_FILTER = {
+        "write_todos",
+        "read_todos",
+        "list_skills",
+    }
+
+    # Count occurrences of each filtered tool from the end
+    tool_call_positions: dict[str, list[int]] = {tool: [] for tool in TOOLS_TO_FILTER}
+    tool_return_positions: dict[str, list[int]] = {tool: [] for tool in TOOLS_TO_FILTER}
+
+    # First pass: find all positions
+    for i, msg in enumerate(messages):
         if isinstance(msg, ModelResponse):
-            new_parts = []
-            has_filtered_parts = False  
             for part in msg.parts:
                 if isinstance(part, ToolCallPart) and part.tool_name in TOOLS_TO_FILTER:
-                    has_filtered_parts = True
-                    continue
-                new_parts.append(part)
-            
-            if has_filtered_parts:
-                if not new_parts: continue
-                try:
-                    new_msg = msg.model_copy(update={"parts": new_parts})
-                    new_messages.append(new_msg)
-                except AttributeError:
-                    msg.parts = new_parts
-                    new_messages.append(msg)
-            else:
-                new_messages.append(msg)
-                
+                    tool_call_positions[part.tool_name].append(i)
         elif isinstance(msg, ModelRequest):
-            new_parts = []
-            has_filtered_parts = False 
             for part in msg.parts:
                 if isinstance(part, ToolReturnPart) and part.tool_name in TOOLS_TO_FILTER:
-                    has_filtered_parts = True
+                    tool_return_positions[part.tool_name].append(i)
+
+    # Determine which positions to keep (last 2 occurrences)
+    positions_to_keep_calls = set()
+    positions_to_keep_returns = set()
+
+    for tool_name in TOOLS_TO_FILTER:
+        # Keep last 2 calls
+        if len(tool_call_positions[tool_name]) > 2:
+            positions_to_keep_calls.update(tool_call_positions[tool_name][-2:])
+        else:
+            positions_to_keep_calls.update(tool_call_positions[tool_name])
+
+        # Keep last 2 returns
+        if len(tool_return_positions[tool_name]) > 2:
+            positions_to_keep_returns.update(tool_return_positions[tool_name][-2:])
+        else:
+            positions_to_keep_returns.update(tool_return_positions[tool_name])
+
+    new_messages: list[ModelMessage] = []
+
+    for msg in messages:
+        if isinstance(msg, ModelResponse):
+            # Filter out tool calls for stateful tools
+            new_parts = []
+            for part in msg.parts:
+                # Keep everything except ToolCallPart for filtered tools
+                if isinstance(part, ToolCallPart) and part.tool_name in TOOLS_TO_FILTER:
                     continue
                 new_parts.append(part)
-            
-            if has_filtered_parts:
-                if not new_parts: continue
+
+            # Only include message if it has remaining parts
+            if new_parts:
                 try:
                     new_msg = msg.model_copy(update={"parts": new_parts})
                     new_messages.append(new_msg)
                 except AttributeError:
+                    # Fallback if model_copy is not available
                     msg.parts = new_parts
                     new_messages.append(msg)
-            else:
-                new_messages.append(msg)
+
+        elif isinstance(msg, ModelRequest):
+            # Filter out tool returns for stateful tools
+            new_parts = []
+            for part in msg.parts:
+                # Keep everything except ToolReturnPart for filtered tools
+                if isinstance(part, ToolReturnPart) and part.tool_name in TOOLS_TO_FILTER:
+                    continue
+                new_parts.append(part)
+
+            # Only include message if it has remaining parts
+            if new_parts:
+                try:
+                    new_msg = msg.model_copy(update={"parts": new_parts})
+                    new_messages.append(new_msg)
+                except AttributeError:
+                    # Fallback if model_copy is not available
+                    msg.parts = new_parts
+                    new_messages.append(msg)
         else:
+            # Keep all other message types as-is
             new_messages.append(msg)
-            
+
+    # CRITICAL: PydanticAI requires message history to end with ModelRequest
+    # If we accidentally removed the last ModelRequest, add it back
+    if new_messages and not isinstance(new_messages[-1], ModelRequest):
+        # Find the last ModelRequest in original messages and append it
+        for msg in reversed(messages):
+            if isinstance(msg, ModelRequest):
+                new_messages.append(msg)
+                break
+
     return new_messages

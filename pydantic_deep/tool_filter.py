@@ -267,3 +267,45 @@ def create_permission_filter():
         )
     """
     return filter_tools_by_permission
+
+def get_user_permitted_skills(
+    user_id: int,
+    db_session,
+) -> list:
+    """Get skills that a user has permission to use.
+    
+    Args:
+        user_id: User ID to check permissions for
+        db_session: SQLAlchemy database session
+        
+    Returns:
+        List of Skill objects the user can access
+        
+    Example:
+        ```python
+        from src.database import get_db
+        db = next(get_db())
+        skills = get_user_permitted_skills(user_id=1, db_session=db)
+        for skill in skills:
+            print(f"User can use skill: {skill.name}")
+        ```
+    """
+    from src.models.tools_skills import Skill, RoleSkillPermission
+    from src.models.user_management import User
+    
+    # Get user
+    user = db_session.query(User).filter(User.id == user_id).first()
+    if not user:
+        return []
+    
+    # Query skills via role permissions
+    permitted_skills = db_session.query(Skill).join(
+        RoleSkillPermission,
+        RoleSkillPermission.skill_id == Skill.id
+    ).filter(
+        RoleSkillPermission.role_id == user.role_id,
+        RoleSkillPermission.can_use == True,
+        Skill.is_active == True
+    ).all()
+    
+    return permitted_skills

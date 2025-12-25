@@ -1,18 +1,20 @@
 """Main agent factory for pydantic-deep."""
 
 from __future__ import annotations
+import logging
 
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 from pydantic_ai import Agent
-from pydantic_ai._agent_graph import HistoryProcessor
 from pydantic_ai.models import Model
 from pydantic_ai.output import OutputSpec
 from pydantic_ai.tools import DeferredToolRequests, Tool
 
 from pydantic_deep.backends.protocol import BackendProtocol, SandboxProtocol
 from pydantic_deep.backends.state import StateBackend
+from pydantic_deep.backends.sandbox import DockerSandbox
+from pydantic_deep.sandbox_config import build_sandbox_volumes
 from pydantic_deep.deps import DeepAgentDeps
 from pydantic_deep.toolsets.filesystem import (
     create_filesystem_toolset,
@@ -46,6 +48,11 @@ DEFAULT_INSTRUCTIONS = """
 3. 开始任务时标记为进行中，完成时标记为已完成
 4. 将专门工作委派给合适的子代理
 5. 检查可用技能以执行专门任务 - 需要时加载技能说明
+
+## 工具使用限制
+- **最多重试 3 次**：如果同一个工具连续失败 3 次，停止重试并告知用户
+- **搜索工具**：如果搜索结果不理想，最多尝试 2-3 种不同的关键词组合后就应该告知用户
+- **避免无限循环**：如果发现自己在重复相同的操作，应该停下来重新思考或告知用户
 6. 既要全面又要高效
 """
 
@@ -68,7 +75,7 @@ def create_deep_agent(
     include_execute: bool | None = None,
     interrupt_on: dict[str, bool] | None = None,
     output_type: None = None,
-    history_processors: Sequence[HistoryProcessor[DeepAgentDeps]] | None = None,
+    history_processors: Sequence | None = None,
     **agent_kwargs: Any,
 ) -> Agent[DeepAgentDeps, str]: ...
 
@@ -92,7 +99,7 @@ def create_deep_agent(
     interrupt_on: dict[str, bool] | None = None,
     *,
     output_type: OutputSpec[OutputDataT],
-    history_processors: Sequence[HistoryProcessor[DeepAgentDeps]] | None = None,
+    history_processors: Sequence | None = None,
     **agent_kwargs: Any,
 ) -> Agent[DeepAgentDeps, OutputDataT]: ...
 
@@ -117,7 +124,9 @@ def create_deep_agent(  # noqa: C901
     history_processors: list[Callable] | None = None,
     enable_permission_filtering: bool = False,
     enable_history_cleanup: bool = False,
-    enable_mcp_tools: bool = False,
+    enable_mcp_tools: bool = True,
+    user_id: int | None = None,
+    conversation_id: int | None = None,
     **agent_kwargs: Any,
 ) -> Agent[DeepAgentDeps, OutputDataT] | Agent[DeepAgentDeps, str]:
     """Create a deep agent with planning, filesystem, subagent, and skills capabilities.
@@ -150,15 +159,14 @@ def create_deep_agent(  # noqa: C901
             automatically determined based on whether backend is a SandboxProtocol.
             Set to True to force include even when backend is None (useful when
             backend is provided via deps at runtime).
-        interrupt_on: Map of tool names to approval requirements.
-            e.g., {"execute": True, "write_file": True}
-        output_type: Structured output type (Pydantic model, dataclass, TypedDict).
-            When specified, the agent will return this type instead of str.
-        history_processors: Sequence of history processors to apply to messages
-            before sending to the model. Useful for summarization, filtering, etc.
-        enable_permission_filtering: Enable role-based tool and skill filtering.
-            When True, tools and skills are filtered based on user permissions
-            from database. Requires deps.user_id to be set.
+        interrupt_on: Mapping of tool names to whether the agent should pause for user approval.
+        output_type: Expected output structure (structured output).
+        history_processors: List of async functions to process/transform conversation history.
+        enable_permission_filtering: Enable role-based tool and skill permission filtering.
+        enable_history_cleanup: Enable automatic history summarization when context is full.
+        enable_mcp_tools: Enable MCP (Model Context Protocol) tools from database configuration.
+        user_id: User ID for permission filtering and file isolation.
+        conversation_id: Conversation ID for per-conversation file isolation in Docker sandbox.
         **agent_kwargs: Additional arguments passed to Agent constructor.
 
     Returns:
@@ -202,8 +210,11 @@ def create_deep_agent(  # noqa: C901
         ```
     """
     model = model or DEFAULT_MODEL
-    backend = backend or StateBackend()
     interrupt_on = interrupt_on or {}
+
+    # Initialize backend (defaults to StateBackend)
+    if backend is None:
+        backend = StateBackend()  # In-memory state; use DockerSandbox for execution
 
     # Build toolsets list
     all_toolsets: list[AbstractToolset[DeepAgentDeps]] = []
@@ -287,20 +298,15 @@ def create_deep_agent(  # noqa: C901
     # Load MCP tools if enabled
     if enable_mcp_tools:
         try:
-            from pydantic_ai.toolsets.fastmcp import FastMCPToolset
-            from pydantic_deep.mcp_config import load_mcp_config_from_db
-            
-            # Load MCP config from database
-            mcp_config = load_mcp_config_from_db()
-            
-            if mcp_config and mcp_config.get('mcpServers'):
-                mcp_toolset = FastMCPToolset(mcp_config)
+            from pydantic_deep.toolsets.mcp import get_mcp_toolset
+            mcp_toolset = get_mcp_toolset()
+            if mcp_toolset:
                 all_toolsets.append(mcp_toolset)
-                print(f"Loaded {len(mcp_config['mcpServers'])} MCP servers")
-        except ImportError:
-            print("FastMCPToolset not available (pydantic-ai version may be outdated)")
+                print(f"✅ Using global MCP toolset")
+            else:
+                print("ℹ️  No MCP servers configured")
         except Exception as e:
-            print(f"Failed to load MCP tools: {e}")
+            print(f"❌ Failed to load MCP toolset: {e}")
     
     # Update toolsets in kwargs
     agent_create_kwargs["toolsets"] = all_toolsets
@@ -329,12 +335,11 @@ def create_deep_agent(  # noqa: C901
     agent_create_kwargs.update(agent_kwargs)
 
     # Log toolsets for debugging
-    import logging
     logger = logging.getLogger(__name__)
     toolset_names = [t.id if hasattr(t, 'id') else str(type(t).__name__) for t in all_toolsets]
     logger.info(f"[DeepAgent] Creating agent with {len(all_toolsets)} toolsets: {toolset_names}")
-    
-    # Create the agent
+
+    # Create the agent (deps will be passed at runtime via agent.run())
     agent: Agent[DeepAgentDeps, Any] = Agent(
         model,
         **agent_create_kwargs,
@@ -346,10 +351,10 @@ def create_deep_agent(  # noqa: C901
         """Generate dynamic instructions based on current state."""
         parts = []
 
-        # Show uploaded files first (most relevant for user's current task)
-        uploads_prompt = ctx.deps.get_uploads_summary()
-        if uploads_prompt:
-            parts.append(uploads_prompt)
+        # Show available files (from volume mounts or uploads)
+        files_prompt = ctx.deps.get_files_summary()
+        if files_prompt:
+            parts.append(files_prompt)
 
         if include_todo:
             todo_prompt = get_todo_system_prompt(ctx.deps)
@@ -412,51 +417,3 @@ def create_default_deps(
     return DeepAgentDeps(backend=backend or StateBackend())
 
 
-async def run_with_files(
-    agent: Agent[DeepAgentDeps, OutputDataT],
-    query: str,
-    deps: DeepAgentDeps,
-    files: list[tuple[str, bytes]] | None = None,
-    *,
-    upload_dir: str = "/uploads",
-) -> OutputDataT:
-    """Run agent with file uploads.
-
-    This is a convenience function that uploads files to the backend
-    before running the agent. The files are accessible via file tools
-    (read_file, grep, glob, execute).
-
-    Args:
-        agent: The agent to run.
-        query: The user query/prompt.
-        deps: Agent dependencies.
-        files: List of (filename, content) tuples to upload.
-        upload_dir: Directory to store uploads (default: "/uploads")
-
-    Returns:
-        Agent output (type depends on agent's output_type).
-
-    Example:
-        ```python
-        from pydantic_deep import create_deep_agent, DeepAgentDeps, run_with_files
-        from pydantic_deep.backends import StateBackend
-
-        agent = create_deep_agent()
-        deps = DeepAgentDeps(backend=StateBackend())
-
-        with open("sales.csv", "rb") as f:
-            result = await run_with_files(
-                agent,
-                "Analyze the sales data and find top products",
-                deps,
-                files=[("sales.csv", f.read())],
-            )
-        ```
-    """
-    # Upload files (synchronous)
-    for name, content in files or []:
-        deps.upload_file(name, content, upload_dir=upload_dir)
-
-    # Run agent
-    result = await agent.run(query, deps=deps)
-    return result.output

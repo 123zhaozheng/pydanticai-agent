@@ -156,11 +156,13 @@ async def chat_stream(
     from fastapi.responses import StreamingResponse
     from pydantic_deep import create_deep_agent
     from pydantic_deep.deps import DeepAgentDeps
-    from pydantic_deep.processors.cleanup import deduplicate_stateful_tools_processor
+    from pydantic_deep.backends.sandbox import DockerSandbox
+    from pydantic_deep.sandbox_config import build_sandbox_volumes
+    # from pydantic_deep.processors.cleanup import deduplicate_stateful_tools_processor
     from src.services.model_manager import model_manager
-    
+
     service = ConversationService(db)
-    
+
     # Get model instance
     try:
         if body.model_name:
@@ -169,16 +171,25 @@ async def chat_stream(
             model = model_manager.get_default_model(db)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    
-    # Create DeepAgentDeps
-    deps = DeepAgentDeps(user_id=user_id)
-    
-    # Create Agent
+
+    # Create sandbox with current working directory mounted to /workspace
+    volumes = build_sandbox_volumes()
+    sandbox = DockerSandbox(volumes=volumes)
+
+    # Create DeepAgentDeps with sandbox backend
+    deps = DeepAgentDeps(
+        backend=sandbox,
+        user_id=user_id,
+        conversation_id=conversation_id
+    )
+
+    # Create Agent (history cleanup disabled to prevent infinite loops)
     agent = create_deep_agent(
         model=model,
+        backend=sandbox,
         enable_permission_filtering=False,
         enable_mcp_tools=True,
-        history_processors=[deduplicate_stateful_tools_processor]
+        # history_processors=[deduplicate_stateful_tools_processor]  # Disabled: causes infinite tool call loops
     )
     
     import json

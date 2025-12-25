@@ -264,6 +264,7 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
         runtime: RuntimeConfig | str | None = None,
         session_id: str | None = None,
         idle_timeout: int = 3600,
+        volumes: dict[str, dict[str, str]] | None = None,
     ):
         """Initialize Docker sandbox.
 
@@ -275,6 +276,7 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
             runtime: RuntimeConfig or name of built-in runtime.
             session_id: Alias for sandbox_id (for session management).
             idle_timeout: Timeout in seconds for idle cleanup (default: 1 hour).
+            volumes: Volume mounts dict (host_path -> {'bind': container_path, 'mode': 'rw'|'ro'}).
         """
         # session_id is an alias for sandbox_id
         effective_id = session_id or sandbox_id
@@ -284,6 +286,7 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
         self._container = None
         self._idle_timeout = idle_timeout
         self._last_activity = time.time()
+        self._volumes = volumes or {}
 
         # Handle runtime configuration
         if runtime is not None:
@@ -338,7 +341,7 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
             working_dir=self._work_dir,
             auto_remove=self._auto_remove,
             environment=env_vars,
-            volumes={},  # Can be configured for persistent storage
+            volumes=self._volumes,  # Use dynamic volumes
         )
 
     def _ensure_runtime_image(self, client: object) -> str:

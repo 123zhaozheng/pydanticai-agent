@@ -1,13 +1,14 @@
 """API endpoints for MCP Server management."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy.orm import Session
 from datetime import datetime
 
 from src.database import get_db
 from src.models.tools_skills import McpServer, TransportType
 from src.services.mcp_service import MCPServerService
+from pydantic_deep.toolsets.mcp import reload_mcp_toolset
 
 router = APIRouter(prefix="/api/mcp-servers", tags=["mcp-servers"])
 
@@ -43,6 +44,8 @@ class MCPServerUpdate(BaseModel):
 
 class MCPServerResponse(BaseModel):
     """Response model for an MCP server."""
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     name: str
     description: str | None
@@ -57,9 +60,6 @@ class MCPServerResponse(BaseModel):
     timeout_seconds: int
     created_at: datetime
     updated_at: datetime
-    
-    class Config:
-        from_attributes = True
 
 
 class ConnectionTestResponse(BaseModel):
@@ -100,6 +100,8 @@ async def create_mcp_server(
     service = MCPServerService(db)
     try:
         server = service.create_server(body.dict(), created_by=user_id)
+        # Reload MCP toolset to pick up changes
+        reload_mcp_toolset()
         return server
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -129,6 +131,8 @@ async def update_mcp_server(
     try:
         updates = body.dict(exclude_unset=True)
         server = service.update_server(server_name, updates)
+        # Reload MCP toolset to pick up changes
+        reload_mcp_toolset()
         return server
     except ValueError as e:
         raise HTTPException(status_code=404 if "not found" in str(e) else 400, detail=str(e))
@@ -144,6 +148,8 @@ async def delete_mcp_server(
     service = MCPServerService(db)
     try:
         service.delete_server(server_name, soft_delete=not hard_delete)
+        # Reload MCP toolset to pick up changes
+        reload_mcp_toolset()
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 

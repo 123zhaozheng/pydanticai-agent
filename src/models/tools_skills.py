@@ -62,7 +62,7 @@ class Skill(Base):
     """Skill Package Registry - Path-based skill packages with SKILL.md."""
     __tablename__ = "skills"
     
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     name = Column(String(100), unique=True, nullable=False, index=True,
                  comment="Skill identifier (e.g., 'code_review')")
     description = Column(Text, comment="Brief description of skill functionality")
@@ -106,9 +106,9 @@ class RoleToolPermission(Base):
     """Role's MCP Server Permissions - Defines which roles can access which servers."""
     __tablename__ = "role_tool_permissions"
     
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     role_id = Column(Integer, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False)
-    server_id = Column(BigInteger, ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=False)
+    server_id = Column(Integer, ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=False)
     
     # Permission Types
     can_use = Column(Boolean, default=True, comment="Can use tools from this server")
@@ -134,9 +134,9 @@ class RoleSkillPermission(Base):
     """Role's Skill Permissions - Defines which roles can access which skills."""
     __tablename__ = "role_skill_permissions"
     
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     role_id = Column(Integer, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False)
-    skill_id = Column(BigInteger, ForeignKey("skills.id", ondelete="CASCADE"), nullable=False)
+    skill_id = Column(Integer, ForeignKey("skills.id", ondelete="CASCADE"), nullable=False)
     
     # Permission Types
     can_use = Column(Boolean, default=True, comment="Can load and use the skill")
@@ -162,10 +162,10 @@ class DepartmentToolPermission(Base):
     """Department-level Server Access Control - Overrides role permissions within department."""
     __tablename__ = "department_tool_permissions"
     
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     department_id = Column(Integer, ForeignKey("departments.id", ondelete="CASCADE"), 
                           nullable=False)
-    server_id = Column(BigInteger, ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=False)
+    server_id = Column(Integer, ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=False)
     
     is_allowed = Column(Boolean, default=True, 
                        comment="Whether department can access this server")
@@ -189,10 +189,10 @@ class DepartmentSkillPermission(Base):
     """Department-level Skill Access Control - Overrides role permissions within department."""
     __tablename__ = "department_skill_permissions"
     
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     department_id = Column(Integer, ForeignKey("departments.id", ondelete="CASCADE"), 
                           nullable=False)
-    skill_id = Column(BigInteger, ForeignKey("skills.id", ondelete="CASCADE"), nullable=False)
+    skill_id = Column(Integer, ForeignKey("skills.id", ondelete="CASCADE"), nullable=False)
     
     is_allowed = Column(Boolean, default=True,
                        comment="Whether department can access this skill")

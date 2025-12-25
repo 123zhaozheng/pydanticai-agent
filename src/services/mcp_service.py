@@ -104,9 +104,13 @@ class MCPServerService:
         self.session.commit()
         self.session.refresh(server)
         
-        # Clear MCP manager cache
-        # from pydantic_deep.mcp_manager import mcp_manager
-        # mcp_manager.clear_cache()
+        # Reload global MCP toolset to include new server
+        try:
+            from src.main import reload_mcp_toolset
+            reload_mcp_toolset()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Failed to reload MCP toolset: {e}")
         
         return server
     
@@ -140,9 +144,12 @@ class MCPServerService:
         self.session.commit()
         self.session.refresh(server)
         
-        # Clear cache
-        # from pydantic_deep.mcp_manager import mcp_manager
-        # mcp_manager.clear_cache(server_name)
+        # Reload global MCP toolset to reflect changes
+        try:
+            from src.main import reload_mcp_toolset
+            reload_mcp_toolset()
+        except Exception:
+            pass
         
         return server
     
@@ -165,9 +172,12 @@ class MCPServerService:
             self.session.delete(server)
             self.session.commit()
             
-        # Clear cache
-        # from pydantic_deep.mcp_manager import mcp_manager
-        # mcp_manager.clear_cache(server_name)
+        # Reload global MCP toolset to remove deleted server
+        try:
+            from src.main import reload_mcp_toolset
+            reload_mcp_toolset()
+        except Exception:
+            pass
         
         return True
     

@@ -22,18 +22,23 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from src.database import init_db
-from src.routes import files
 
 # Import API routers
 from src.api.models import router as models_router
-from src.api.conversations import router as conversations_router  
+from src.api.conversations import router as conversations_router
 from src.api.mcp_tools import router as mcp_tools_router
 from src.api.todos import router as todos_router
+from pydantic_deep.toolsets.mcp import reload_mcp_toolset
+
+# ========== 全局 MCP Toolset 单例 ==========
+# Moved to pydantic_deep.toolsets.mcp
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize database on startup
     init_db()
+    # Initialize global MCP toolset
+    reload_mcp_toolset()
     yield
 
 app = FastAPI(
@@ -44,7 +49,6 @@ app = FastAPI(
 )
 
 # Include routers
-app.include_router(files.router)
 app.include_router(models_router)
 app.include_router(conversations_router)
 app.include_router(mcp_tools_router)
