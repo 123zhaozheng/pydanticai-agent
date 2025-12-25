@@ -32,6 +32,10 @@ def _validate_path(path: str, root_dir: Path) -> str | None:
 class FilesystemBackend:
     """Backend for real filesystem operations.
 
+    .. deprecated:: 0.2.0
+        FilesystemBackend is deprecated and will be removed in a future version.
+        Use DockerSandbox with volume mounts instead for better isolation.
+
     All operations are relative to the root_dir.
     """
 
@@ -42,6 +46,15 @@ class FilesystemBackend:
             root_dir: Base directory for all operations.
             virtual_mode: If True, create the root_dir if it doesn't exist.
         """
+        import warnings
+
+        warnings.warn(
+            "FilesystemBackend is deprecated and will be removed in a future version. "
+            "Use DockerSandbox with volume mounts instead for better isolation.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         self._root = Path(root_dir).resolve()
 
         if virtual_mode:

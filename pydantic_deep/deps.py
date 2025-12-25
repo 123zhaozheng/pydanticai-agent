@@ -63,24 +63,53 @@ class DeepAgentDeps:
 
     def get_files_summary(self) -> str:
         """Generate summary of available files from file_paths.
-        
+
         This tells the agent which files are available in the container
         via volume mounts, without storing file contents in memory.
         """
-        if not self.file_paths:
-            return ""
+        lines = ["## 工作空间环境"]
+        lines.append("")
+        lines.append("你在一个Docker沙箱容器中运行，可以访问以下目录：")
+        lines.append("")
+        lines.append("### 📁 目录说明")
+        lines.append("- `/workspace/uploads/` - 用户上传的文件（可读写）")
+        lines.append("- `/workspace/intermediate/` - 中间处理目录，用于存放代码输出、临时文件等（可读写）")
+        lines.append("- `/workspace/skills/` - 技能资源目录，包含可用的脚本和工具（只读）")
+        lines.append("")
 
-        lines = ["## Available Files"]
-        lines.append("")
-        lines.append("The following files are available in the workspace:")
-        lines.append("")
-        
-        for path in sorted(self.file_paths):
-            lines.append(f"- `{path}`")
-        
-        lines.append("")
-        lines.append("Use `read_file(path)` to view file contents, `grep(pattern, path)` to search,")
-        lines.append("or `execute` to process these files with shell commands.")
+        if not self.file_paths:
+            lines.append("当前工作空间中没有文件。")
+            lines.append("")
+            lines.append("**提示**：你可以使用 `execute` 工具执行命令创建文件，或让用户上传文件。")
+        else:
+            # Group files by directory
+            uploads = [p for p in self.file_paths if p.startswith("/workspace/uploads/")]
+            intermediate = [p for p in self.file_paths if p.startswith("/workspace/intermediate/")]
+            skills = [p for p in self.file_paths if p.startswith("/workspace/skills/")]
+
+            if uploads:
+                lines.append("### 📤 上传文件")
+                for path in sorted(uploads):
+                    lines.append(f"- `{path}`")
+                lines.append("")
+
+            if intermediate:
+                lines.append("### ⚙️ 中间文件")
+                for path in sorted(intermediate):
+                    lines.append(f"- `{path}`")
+                lines.append("")
+
+            if skills:
+                lines.append("### 🛠️ 技能资源")
+                for path in sorted(skills):
+                    lines.append(f"- `{path}`")
+                lines.append("")
+
+            lines.append("**工具使用**：")
+            lines.append("- 读取文件：`read_file(path)`")
+            lines.append("- 搜索内容：`grep(pattern, path)`")
+            lines.append("- 执行命令：`execute(command)` 例如：`execute('python script.py')`")
+            lines.append("- 写入文件：`write_file(path, content)` 建议写入 `/workspace/intermediate/` 目录")
 
         return "\n".join(lines)
 

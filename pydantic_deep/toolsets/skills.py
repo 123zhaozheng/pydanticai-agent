@@ -216,76 +216,104 @@ class SkillsToolset(FunctionToolset[DeepAgentDeps]):
 def create_skills_toolset(  # noqa: C901
     *,
     id: str = "skills",
-    directories: list[SkillDirectory] | None = None,
-    skills: list[Skill] | None = None,
+    directories: list[SkillDirectory] | None = None,  # Kept for backwards compatibility
+    skills: list[Skill] | None = None,  # Kept for backwards compatibility
 ) -> SkillsToolset:
     """Create a skills toolset.
 
+    Note: In the sandbox-based implementation, skills are discovered dynamically
+    from /workspace/skills/ at runtime, so the directories and skills parameters
+    are no longer used but kept for API backwards compatibility.
+
     Args:
         id: Unique identifier for this toolset.
-        directories: List of directories to discover skills from.
-        skills: Pre-loaded skills (alternative to directories).
+        directories: (Deprecated) List of directories to discover skills from.
+        skills: (Deprecated) Pre-loaded skills.
 
     Returns:
         Configured SkillsToolset instance.
     """
+    # Suppress unused parameter warnings
+    _ = directories
+    _ = skills
+
     toolset = SkillsToolset(id=id)
 
-    # Discover or use provided skills
-    if skills is None and directories:
-        skills = discover_skills(directories)
-    elif skills is None:
-        # Default skills directory
-        skills = discover_skills([{"path": DEFAULT_SKILLS_DIR, "recursive": True}])
-
-    # Store skills in toolset for access by tools
-    _skills_cache: dict[str, Skill] = {skill["name"]: skill for skill in (skills or [])}
+    # Note: Skills are now discovered dynamically from the container at runtime.
+    # The directories/skills parameters are kept for backwards compatibility
+    # but are not used in the sandbox-based implementation.
 
     @toolset.tool
     async def list_skills(ctx: RunContext[DeepAgentDeps]) -> str:  # pragma: no cover
-        """List all available skills.
+        """List all available skills from the container.
 
-        Returns a summary of each skill with its name, description, and tags.
-        Use load_skill to get full instructions for a specific skill.
+        Scans /workspace/skills/ directory in the sandbox for SKILL.md files
+        and returns their metadata.
 
         Returns:
             Formatted list of available skills.
         """
-        if not _skills_cache:
+        backend = ctx.deps.backend
+
+        # Find all SKILL.md files in the skills directory
+        result = backend.execute("find /workspace/skills -name 'SKILL.md' -type f 2>/dev/null || echo ''")
+
+        if result.exit_code != 0 or not result.output.strip():
+            return "No skills available. The /workspace/skills directory is empty or not mounted."
+
+        skill_paths = [p for p in result.output.strip().split("\n") if p]
+
+        if not skill_paths:
             return "No skills available."
-        
-        # Filter skills by user permission if user_id is set
-        available_skills = _skills_cache
-        if hasattr(ctx.deps, 'user_id') and ctx.deps.user_id:
-            try:
-                from pydantic_deep.tool_filter import get_user_skill_permissions
-                permitted_skill_names = await get_user_skill_permissions(ctx.deps.user_id, ctx.deps)
-                available_skills = {
-                    name: skill 
-                    for name, skill in _skills_cache.items() 
-                    if name in permitted_skill_names
-                }
-                
-                if not available_skills:
-                    return "No skills available (you don't have permission to access any skills)."
-            except Exception as e:
-                # If permission check fails, return all skills (backward compatible)
-                print(f"Skill permission check failed: {e}")
-                available_skills = _skills_cache
 
         lines = ["Available Skills:", ""]
 
-        for name, skill in sorted(available_skills.items()):
-            tags_str = ", ".join(skill["tags"]) if skill["tags"] else "none"
-            resources_str = ""
-            if skill.get("resources"):
-                resources_str = f" (resources: {', '.join(skill['resources'])})"
+        for skill_md_path in sorted(skill_paths):
+            try:
+                # Read SKILL.md file from container
+                content = backend.read(skill_md_path)
 
-            lines.append(f"**{name}** (v{skill['version']})")
-            lines.append(f"  Description: {skill['description']}")
-            lines.append(f"  Tags: {tags_str}")
-            lines.append(f"  Path: {skill['path']}{resources_str}")
-            lines.append("")
+                if "Error:" in content:
+                    continue
+
+                # Parse frontmatter
+                frontmatter, _ = parse_skill_md(content)
+
+                if not frontmatter.get("name"):
+                    continue
+
+                # Get skill directory path
+                skill_dir = skill_md_path.rsplit("/", 1)[0]
+
+                # List resource files (excluding SKILL.md)
+                resources_result = backend.execute(
+                    f"find {skill_dir} -type f ! -name 'SKILL.md' -exec basename {{}} \\; 2>/dev/null || echo ''"
+                )
+                resources = []
+                if resources_result.exit_code == 0 and resources_result.output.strip():
+                    resources = [r for r in resources_result.output.strip().split("\n") if r]
+
+                # Format output
+                name = frontmatter.get("name", "Unknown")
+                description = frontmatter.get("description", "")
+                version = frontmatter.get("version", "1.0.0")
+                tags = frontmatter.get("tags", [])
+                tags_str = ", ".join(tags) if tags else "none"
+                resources_str = f" (resources: {', '.join(resources)})" if resources else ""
+
+                lines.append(f"**{name}** (v{version})")
+                lines.append(f"  Description: {description}")
+                lines.append(f"  Tags: {tags_str}")
+                lines.append(f"  Path: {skill_dir}{resources_str}")
+                lines.append("")
+
+            except Exception as e:
+                # Skip invalid skills
+                print(f"Error reading skill at {skill_md_path}: {e}")
+                continue
+
+        if len(lines) == 2:  # Only header, no skills parsed
+            return "No valid skills found."
 
         return "\n".join(lines)
 
@@ -294,10 +322,10 @@ def create_skills_toolset(  # noqa: C901
         ctx: RunContext[DeepAgentDeps],
         skill_name: str,
     ) -> str:
-        """Load full instructions for a skill.
+        """Load full instructions for a skill from the container.
 
-        This loads the complete SKILL.md content including detailed instructions
-        on how to use the skill.
+        Searches for the skill by name in /workspace/skills/ and loads
+        the complete SKILL.md content.
 
         Args:
             skill_name: Name of the skill to load.
@@ -305,40 +333,63 @@ def create_skills_toolset(  # noqa: C901
         Returns:
             Full skill instructions in markdown format.
         """
-        if skill_name not in _skills_cache:
-            available = ", ".join(_skills_cache.keys()) if _skills_cache else "none"
-            return f"Error: Skill '{skill_name}' not found. Available skills: {available}"
-        
-        # Check permission if user_id is set
-        if hasattr(ctx.deps, 'user_id') and ctx.deps.user_id:
-            try:
-                from pydantic_deep.tool_filter import get_user_skill_permissions
-                permitted_skills = await get_user_skill_permissions(ctx.deps.user_id, ctx.deps)
-                if skill_name not in permitted_skills:
-                    return f"Error: You don't have permission to load skill '{skill_name}'."
-            except Exception as e:
-                # Permission check failed, log and continue (backward compatible)
-                print(f"Skill permission check failed: {e}")
+        backend = ctx.deps.backend
 
-        skill = _skills_cache[skill_name]
-        instructions = load_skill_instructions(skill["path"])
+        # Find skill directory by name
+        find_result = backend.execute(
+            f"find /workspace/skills -type d -name '*{skill_name}*' 2>/dev/null || echo ''"
+        )
 
-        # Update cache with full instructions
-        skill["instructions"] = instructions
-        skill["frontmatter_loaded"] = False
+        if find_result.exit_code != 0 or not find_result.output.strip():
+            return f"Error: Skill '{skill_name}' not found in /workspace/skills/"
+
+        skill_dirs = [d for d in find_result.output.strip().split("\n") if d]
+
+        if not skill_dirs:
+            return f"Error: Skill '{skill_name}' not found."
+
+        # Use the first match (could be improved with exact name matching)
+        skill_dir = skill_dirs[0]
+        skill_md_path = f"{skill_dir}/SKILL.md"
+
+        # Check if SKILL.md exists
+        check_result = backend.execute(f"test -f {skill_md_path} && echo 'exists' || echo 'not found'")
+
+        if "not found" in check_result.output:
+            return f"Error: SKILL.md not found in {skill_dir}"
+
+        # Read SKILL.md
+        content = backend.read(skill_md_path)
+
+        if "Error:" in content:
+            return f"Error reading SKILL.md: {content}"
+
+        # Parse content
+        frontmatter, instructions = parse_skill_md(content)
+
+        # List resources
+        resources_result = backend.execute(
+            f"find {skill_dir} -type f ! -name 'SKILL.md' -exec basename {{}} \\; 2>/dev/null || echo ''"
+        )
+        resources = []
+        if resources_result.exit_code == 0 and resources_result.output.strip():
+            resources = [r for r in resources_result.output.strip().split("\n") if r]
 
         # Format response
+        name = frontmatter.get("name", skill_name)
+        version = frontmatter.get("version", "1.0.0")
+
         lines = [
-            f"# Skill: {skill['name']}",
-            f"Version: {skill['version']}",
-            f"Path: {skill['path']}",
+            f"# Skill: {name}",
+            f"Version: {version}",
+            f"Path: {skill_dir}",
             "",
             "## Instructions",
             "",
             instructions,
         ]
 
-        if skill.get("resources"):
+        if resources:
             lines.extend(
                 [
                     "",
@@ -346,8 +397,9 @@ def create_skills_toolset(  # noqa: C901
                     "",
                 ]
             )
-            for resource in skill["resources"]:
-                lines.append(f"- {skill['path']}/{resource}")
+            for resource in resources:
+                lines.append(f"- {skill_dir}/{resource}")
+                lines.append(f"  Use `read_skill_resource('{name}', '{resource}')` to read this file")
 
         return "\n".join(lines)
 
@@ -357,7 +409,7 @@ def create_skills_toolset(  # noqa: C901
         skill_name: str,
         resource_name: str,
     ) -> str:
-        """Read a resource file from a skill.
+        """Read a resource file from a skill in the container.
 
         Skills can include additional files (scripts, templates, documents)
         that support their functionality.
@@ -369,25 +421,118 @@ def create_skills_toolset(  # noqa: C901
         Returns:
             Content of the resource file.
         """
-        if skill_name not in _skills_cache:
+        backend = ctx.deps.backend
+
+        # Find skill directory
+        find_result = backend.execute(
+            f"find /workspace/skills -type d -name '*{skill_name}*' 2>/dev/null || echo ''"
+        )
+
+        if find_result.exit_code != 0 or not find_result.output.strip():
             return f"Error: Skill '{skill_name}' not found."
 
-        skill = _skills_cache[skill_name]
-        resource_path = Path(skill["path"]) / resource_name
+        skill_dirs = [d for d in find_result.output.strip().split("\n") if d]
 
-        if not resource_path.exists():
-            available = skill.get("resources", [])
-            return f"Error: Resource '{resource_name}' not found. Available: {available}"
+        if not skill_dirs:
+            return f"Error: Skill '{skill_name}' not found."
 
-        # Security check: ensure resource is within skill directory
-        try:
-            resource_path.resolve().relative_to(Path(skill["path"]).resolve())
-        except ValueError:
-            return "Error: Resource path escapes skill directory."
+        skill_dir = skill_dirs[0]
 
-        try:
-            return resource_path.read_text()
-        except Exception as e:
-            return f"Error reading resource: {e}"
+        # Construct resource path
+        # Security: Use basename to prevent directory traversal
+        safe_resource_name = resource_name.split("/")[-1]
+        resource_path = f"{skill_dir}/{safe_resource_name}"
+
+        # Check if resource exists
+        check_result = backend.execute(f"test -f {resource_path} && echo 'exists' || echo 'not found'")
+
+        if "not found" in check_result.output:
+            # List available resources
+            list_result = backend.execute(
+                f"find {skill_dir} -type f ! -name 'SKILL.md' -exec basename {{}} \\; 2>/dev/null || echo ''"
+            )
+            available = []
+            if list_result.exit_code == 0 and list_result.output.strip():
+                available = [r for r in list_result.output.strip().split("\n") if r]
+
+            return f"Error: Resource '{resource_name}' not found. Available resources: {', '.join(available) if available else 'none'}"
+
+        # Read resource
+        content = backend.read(resource_path)
+
+        if "Error:" in content:
+            return f"Error reading resource: {content}"
+
+        return content
+
+    @toolset.tool
+    async def execute_skill_script(  # pragma: no cover
+        ctx: RunContext[DeepAgentDeps],
+        skill_name: str,
+        script_name: str,
+        args: str = "",
+        working_dir: str = "/workspace/intermediate",
+    ) -> str:
+        """Execute a script from a skill in the container.
+
+        The script will be executed with the specified arguments, and the
+        working directory will be set to /workspace/intermediate by default.
+
+        Args:
+            skill_name: Name of the skill containing the script.
+            script_name: Name of the script file to execute.
+            args: Command-line arguments to pass to the script (optional).
+            working_dir: Working directory for script execution (default: /workspace/intermediate).
+
+        Returns:
+            Script output including exit code.
+        """
+        backend = ctx.deps.backend
+
+        # Find skill directory
+        find_result = backend.execute(
+            f"find /workspace/skills -type d -name '*{skill_name}*' 2>/dev/null || echo ''"
+        )
+
+        if find_result.exit_code != 0 or not find_result.output.strip():
+            return f"Error: Skill '{skill_name}' not found."
+
+        skill_dirs = [d for d in find_result.output.strip().split("\n") if d]
+
+        if not skill_dirs:
+            return f"Error: Skill '{skill_name}' not found."
+
+        skill_dir = skill_dirs[0]
+
+        # Construct script path (security: use basename)
+        safe_script_name = script_name.split("/")[-1]
+        script_path = f"{skill_dir}/{safe_script_name}"
+
+        # Check if script exists
+        check_result = backend.execute(f"test -f {script_path} && echo 'exists' || echo 'not found'")
+
+        if "not found" in check_result.output:
+            return f"Error: Script '{script_name}' not found in skill '{skill_name}'."
+
+        # Execute script
+        # Change to working directory and execute
+        command = f"cd {working_dir} && bash {script_path} {args}"
+        result = backend.execute(command, timeout=300)
+
+        # Format output
+        lines = [
+            f"Script: {script_path}",
+            f"Working Directory: {working_dir}",
+            f"Exit Code: {result.exit_code}",
+            "",
+            "Output:",
+            result.output,
+        ]
+
+        if result.truncated:
+            lines.append("")
+            lines.append("(Output was truncated due to size limit)")
+
+        return "\n".join(lines)
 
     return toolset

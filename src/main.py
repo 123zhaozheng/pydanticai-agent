@@ -28,6 +28,7 @@ from src.api.models import router as models_router
 from src.api.conversations import router as conversations_router
 from src.api.mcp_tools import router as mcp_tools_router
 from src.api.todos import router as todos_router
+from src.api.uploads import router as uploads_router
 from pydantic_deep.toolsets.mcp import reload_mcp_toolset
 
 # ========== 全局 MCP Toolset 单例 ==========
@@ -53,6 +54,7 @@ app.include_router(models_router)
 app.include_router(conversations_router)
 app.include_router(mcp_tools_router)
 app.include_router(todos_router)
+app.include_router(uploads_router)
 
 
 @app.get("/")

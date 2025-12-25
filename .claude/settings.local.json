@@ -5,7 +5,8 @@
       "mcp__context7__get-library-docs",
       "Bash(python:*)",
       "Bash(cat:*)",
-      "Bash(python3 -c \"\nimport inspect\n\n# 直接读取文件内容检查\nwith open\\(''pydantic_deep/processors/cleanup.py'', ''r'', encoding=''utf-8''\\) as f:\n    content = f.read\\(\\)\n    # 找到函数定义行\n    for line in content.split\\(''\\\\n''\\):\n        if ''def deduplicate_stateful_tools_processor'' in line:\n            print\\(''Function definition:'', line\\)\n            break\n\")"
+      "Bash(python3 -c \"\nimport inspect\n\n# 直接读取文件内容检查\nwith open\\(''pydantic_deep/processors/cleanup.py'', ''r'', encoding=''utf-8''\\) as f:\n    content = f.read\\(\\)\n    # 找到函数定义行\n    for line in content.split\\(''\\\\n''\\):\n        if ''def deduplicate_stateful_tools_processor'' in line:\n            print\\(''Function definition:'', line\\)\n            break\n\")",
+      "Bash(tree:*)"
     ]
   }
 }

@@ -12,6 +12,10 @@ if TYPE_CHECKING:
 class CompositeBackend:
     """Backend that routes operations to different backends by path prefix.
 
+    .. deprecated:: 0.2.0
+        CompositeBackend is deprecated and will be removed in a future version.
+        Use DockerSandbox with multiple volume mounts instead.
+
     Allows combining multiple backends (e.g., memory for temp files,
     filesystem for persistent storage) under a unified interface.
     """
@@ -28,6 +32,15 @@ class CompositeBackend:
             routes: Dictionary mapping path prefixes to backends.
                     e.g., {"/memories/": store_backend, "/temp/": state_backend}
         """
+        import warnings
+
+        warnings.warn(
+            "CompositeBackend is deprecated and will be removed in a future version. "
+            "Use DockerSandbox with multiple volume mounts instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         self._default = default
         self._routes = routes or {}
 

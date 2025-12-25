@@ -135,6 +135,7 @@ class ChatRequest(BaseModel):
     """Request model for chat."""
     message: str = Field(..., min_length=1, description="User message")
     model_name: str | None = Field(None, description="Model config name (uses default if not specified)")
+    upload_path: str | None = Field(None, description="Custom upload directory path on host (optional)")
 
 
 @router.post("/{conversation_id}/chat")
@@ -158,10 +159,9 @@ async def chat_stream(
     ```
     """
     from fastapi.responses import StreamingResponse
-    from pydantic_deep import create_deep_agent
+    from pydantic_deep import create_deep_agent, discover_container_files
     from pydantic_deep.deps import DeepAgentDeps
     from pydantic_deep.backends.sandbox import DockerSandbox
-    from pydantic_deep.sandbox_config import build_sandbox_volumes
     # from pydantic_deep.processors.cleanup import deduplicate_stateful_tools_processor
     from src.services.model_manager import model_manager
 
@@ -181,19 +181,26 @@ async def chat_stream(
         sandbox = _sandbox_manager[conversation_id]
         print(f"♻️  Reusing sandbox for conversation {conversation_id}")
     else:
-        volumes = build_sandbox_volumes()
+        # Create sandbox with automatic volume mounting
         sandbox = DockerSandbox(
-            volumes=volumes,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            upload_path=body.upload_path,  # Optional custom upload path
             session_id=f"{user_id}:{conversation_id}"  # Name container as user_id:conversation_id
         )
         _sandbox_manager[conversation_id] = sandbox
         print(f"🆕 Created new sandbox for conversation {conversation_id} (session_id: {user_id}:{conversation_id})")
 
-    # Create DeepAgentDeps with sandbox backend
+    # Discover files in container
+    file_paths = discover_container_files(sandbox)
+    print(f"📂 Discovered {len(file_paths)} files in container")
+
+    # Create DeepAgentDeps with sandbox backend and file paths
     deps = DeepAgentDeps(
         backend=sandbox,
         user_id=user_id,
-        conversation_id=conversation_id
+        conversation_id=conversation_id,
+        file_paths=file_paths  # Inject container file paths
     )
 
     # Create Agent (history cleanup disabled to prevent infinite loops)

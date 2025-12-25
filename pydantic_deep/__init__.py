@@ -48,9 +48,7 @@ from pydantic_deep.agent import create_deep_agent, create_default_deps
 from pydantic_deep.backends import (
     BackendProtocol,
     BaseSandbox,
-    CompositeBackend,
     DockerSandbox,
-    FilesystemBackend,
     SandboxProtocol,
     StateBackend,
 )
@@ -60,6 +58,11 @@ from pydantic_deep.processors import (
     create_summarization_processor,
 )
 from pydantic_deep.runtimes import BUILTIN_RUNTIMES, get_runtime
+from pydantic_deep.sandbox_utils import (
+    discover_container_files,
+    get_file_info,
+    list_container_directories,
+)
 from pydantic_deep.toolsets import FilesystemToolset, SkillsToolset, SubAgentToolset, TodoToolset
 from pydantic_deep.types import (
     CompiledSubAgent,
@@ -86,19 +89,21 @@ __all__ = [
     "create_deep_agent",
     "create_default_deps",
     "DeepAgentDeps",
-    # Backends
+    # Backends (recommended: DockerSandbox)
     "BackendProtocol",
     "SandboxProtocol",
-    "StateBackend",
-    "FilesystemBackend",
-    "CompositeBackend",
-    "BaseSandbox",
-    "DockerSandbox",
+    "StateBackend",  # In-memory backend for development
+    "BaseSandbox",  # Abstract base class
+    "DockerSandbox",  # Recommended: Isolated Docker environment
+    # Note: FilesystemBackend and CompositeBackend are deprecated
     # Runtimes
     "RuntimeConfig",
     "BUILTIN_RUNTIMES",
     "get_runtime",
-
+    # Sandbox utilities
+    "discover_container_files",
+    "list_container_directories",
+    "get_file_info",
     # Toolsets
     "TodoToolset",
     "FilesystemToolset",

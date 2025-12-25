@@ -265,6 +265,11 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
         session_id: str | None = None,
         idle_timeout: int = 3600,
         volumes: dict[str, dict[str, str]] | None = None,
+        # New parameters for automatic volume mounting
+        user_id: int | str | None = None,
+        conversation_id: int | str | None = None,
+        upload_path: str | None = None,
+        base_dir: str | None = None,
     ):
         """Initialize Docker sandbox.
 
@@ -277,6 +282,11 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
             session_id: Alias for sandbox_id (for session management).
             idle_timeout: Timeout in seconds for idle cleanup (default: 1 hour).
             volumes: Volume mounts dict (host_path -> {'bind': container_path, 'mode': 'rw'|'ro'}).
+                     If user_id/conversation_id are provided, volumes will be auto-built.
+            user_id: User ID for automatic volume mounting (optional).
+            conversation_id: Conversation ID for automatic volume mounting (optional).
+            upload_path: Custom upload directory path on host (optional, overrides default).
+            base_dir: Base directory on host for all mounts (default from env or OS-specific).
         """
         # session_id is an alias for sandbox_id
         effective_id = session_id or sandbox_id
@@ -286,7 +296,19 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
         self._container = None
         self._idle_timeout = idle_timeout
         self._last_activity = time.time()
-        self._volumes = volumes or {}
+        self._user_id = user_id
+        self._conversation_id = conversation_id
+
+        # Build volumes automatically if user_id and conversation_id are provided
+        if user_id is not None and conversation_id is not None:
+            self._volumes = self._build_auto_volumes(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                upload_path=upload_path,
+                base_dir=base_dir,
+            )
+        else:
+            self._volumes = volumes or {}
 
         # Handle runtime configuration
         if runtime is not None:
@@ -301,6 +323,72 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
             self._runtime = None
             self._work_dir = work_dir
             self._image = image
+
+    def _build_auto_volumes(
+        self,
+        user_id: int | str,
+        conversation_id: int | str,
+        upload_path: str | None = None,
+        base_dir: str | None = None,
+    ) -> dict[str, dict[str, str]]:
+        """Build volume mounts automatically based on user_id and conversation_id.
+
+        Creates three directories on host and mounts them to container:
+        1. uploads/{user_id}/{conversation_id} -> /workspace/uploads (rw)
+        2. intermediate/{user_id}/{conversation_id} -> /workspace/intermediate (rw)
+        3. skills/ -> /workspace/skills (ro)
+
+        Args:
+            user_id: User ID for directory isolation.
+            conversation_id: Conversation ID for directory isolation.
+            upload_path: Custom upload directory (overrides default).
+            base_dir: Base directory on host (defaults to env var or OS-specific path).
+
+        Returns:
+            Volume mounts dict for Docker.
+        """
+        import os
+        import platform
+        from pathlib import Path
+
+        # Determine base directory
+        if base_dir is None:
+            base_dir = os.getenv("PYDANTIC_DEEP_BASE_DIR")
+            if base_dir is None:
+                # OS-specific defaults
+                system = platform.system()
+                if system == "Windows":
+                    base_dir = "D:/pydantic-deep-data"
+                else:
+                    base_dir = "/var/pydantic-deep"
+
+        volumes = {}
+
+        # 1. Uploads directory (user uploads files here)
+        if upload_path and os.path.exists(upload_path):
+            # Use custom upload path
+            volumes[upload_path] = {"bind": "/workspace/uploads", "mode": "rw"}
+        else:
+            # Use default path: base_dir/uploads/{user_id}/{conversation_id}
+            upload_dir = Path(base_dir) / "uploads" / str(user_id) / str(conversation_id)
+            upload_dir.mkdir(parents=True, exist_ok=True)
+            volumes[str(upload_dir)] = {"bind": "/workspace/uploads", "mode": "rw"}
+
+        # 2. Intermediate directory (for code output, temp files)
+        intermediate_dir = Path(base_dir) / "intermediate" / str(user_id) / str(conversation_id)
+        intermediate_dir.mkdir(parents=True, exist_ok=True)
+        volumes[str(intermediate_dir)] = {"bind": "/workspace/intermediate", "mode": "rw"}
+
+        # 3. Skills directory (read-only, shared across all users)
+        skills_dir = Path(base_dir) / "skills"
+        if skills_dir.exists():
+            volumes[str(skills_dir)] = {"bind": "/workspace/skills", "mode": "ro"}
+        else:
+            # Create skills directory if it doesn't exist
+            skills_dir.mkdir(parents=True, exist_ok=True)
+            volumes[str(skills_dir)] = {"bind": "/workspace/skills", "mode": "ro"}
+
+        return volumes
 
     @property
     def runtime(self) -> RuntimeConfig | None:
@@ -574,6 +662,10 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
 class LocalSandbox(BaseSandbox):  # pragma: no cover
     """Local sandbox using subprocess (no isolation).
 
+    .. deprecated:: 0.2.0
+        LocalSandbox is deprecated and will be removed in a future version.
+        Use DockerSandbox instead for proper isolation.
+
     WARNING: This sandbox executes commands directly on the host system
     without isolation. Use DockerSandbox for production workloads.
     """
@@ -589,6 +681,15 @@ class LocalSandbox(BaseSandbox):  # pragma: no cover
             work_dir: Working directory for commands.
             sandbox_id: Unique identifier for this sandbox.
         """
+        import warnings
+
+        warnings.warn(
+            "LocalSandbox is deprecated and will be removed in a future version. "
+            "Use DockerSandbox instead for proper isolation.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         super().__init__(sandbox_id)
         self._work_dir = work_dir
 
