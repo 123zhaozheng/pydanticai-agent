@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, overload
 from pydantic_ai import Agent
 from pydantic_ai.models import Model
 from pydantic_ai.output import OutputSpec
-from pydantic_ai.tools import DeferredToolRequests, Tool
+from pydantic_ai.tools import Tool
 
 from pydantic_deep.backends.protocol import BackendProtocol, SandboxProtocol
 from pydantic_deep.backends.state import StateBackend
@@ -73,7 +73,6 @@ def create_deep_agent(
     include_skills: bool = True,
     include_general_purpose_subagent: bool = True,
     include_execute: bool | None = None,
-    interrupt_on: dict[str, bool] | None = None,
     output_type: None = None,
     history_processors: Sequence | None = None,
     **agent_kwargs: Any,
@@ -96,7 +95,6 @@ def create_deep_agent(
     include_skills: bool = True,
     include_general_purpose_subagent: bool = True,
     include_execute: bool | None = None,
-    interrupt_on: dict[str, bool] | None = None,
     *,
     output_type: OutputSpec[OutputDataT],
     history_processors: Sequence | None = None,
@@ -119,7 +117,6 @@ def create_deep_agent(  # noqa: C901
     include_skills: bool = True,
     include_general_purpose_subagent: bool = True,
     include_execute: bool | None = None,
-    interrupt_on: dict[str, bool] | None = None,
     output_type: OutputSpec[OutputDataT] | None = None,
     history_processors: list[Callable] | None = None,
     enable_permission_filtering: bool = False,
@@ -159,7 +156,6 @@ def create_deep_agent(  # noqa: C901
             automatically determined based on whether backend is a SandboxProtocol.
             Set to True to force include even when backend is None (useful when
             backend is provided via deps at runtime).
-        interrupt_on: Mapping of tool names to whether the agent should pause for user approval.
         output_type: Expected output structure (structured output).
         history_processors: List of async functions to process/transform conversation history.
         enable_permission_filtering: Enable role-based tool and skill permission filtering.
@@ -210,7 +206,6 @@ def create_deep_agent(  # noqa: C901
         ```
     """
     model = model or DEFAULT_MODEL
-    interrupt_on = interrupt_on or {}
 
     # Initialize backend (defaults to StateBackend)
     if backend is None:
@@ -224,12 +219,6 @@ def create_deep_agent(  # noqa: C901
         all_toolsets.append(todo_toolset)
 
     if include_filesystem:
-        # Determine approval requirements from interrupt_on
-        require_write_approval = interrupt_on.get("write_file", False) or interrupt_on.get(
-            "edit_file", False
-        )
-        require_execute_approval = interrupt_on.get("execute", True)
-
         # Determine if execute should be included
         # If explicitly set, use that; otherwise auto-detect from backend type
         should_include_execute = (
@@ -239,8 +228,8 @@ def create_deep_agent(  # noqa: C901
         fs_toolset = create_filesystem_toolset(
             id="deep-filesystem",
             include_execute=should_include_execute,
-            require_write_approval=require_write_approval,
-            require_execute_approval=require_execute_approval,
+            require_write_approval=False,  # No approval required
+            require_execute_approval=False,  # No approval required
         )
         all_toolsets.append(fs_toolset)
 
@@ -311,18 +300,9 @@ def create_deep_agent(  # noqa: C901
     # Update toolsets in kwargs
     agent_create_kwargs["toolsets"] = all_toolsets
 
-    # Determine if any tools require approval (interrupt_on has True values)
-    has_interrupt_tools = any(interrupt_on.values())
-
+    # Set output_type if provided
     if output_type is not None:
-        # If interrupt_on is used, combine output_type with DeferredToolRequests
-        if has_interrupt_tools:
-            agent_create_kwargs["output_type"] = [output_type, DeferredToolRequests]
-        else:
-            agent_create_kwargs["output_type"] = output_type
-    elif has_interrupt_tools:
-        # No custom output_type but interrupt_on is used
-        agent_create_kwargs["output_type"] = [str, DeferredToolRequests]
+        agent_create_kwargs["output_type"] = output_type
 
     if history_processors is not None:
         agent_create_kwargs["history_processors"] = list(history_processors)

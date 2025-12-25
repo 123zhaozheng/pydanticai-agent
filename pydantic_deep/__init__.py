@@ -18,7 +18,6 @@ Example:
     agent = create_deep_agent(
         model="openai:gpt-4.1",
         instructions="You are a helpful coding assistant",
-        interrupt_on={"execute": True},
     )
 
     # With structured output

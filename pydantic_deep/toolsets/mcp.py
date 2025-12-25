@@ -29,7 +29,7 @@ def reload_mcp_toolset():
     try:
         mcp_config = load_mcp_config_from_db()
         if mcp_config and mcp_config.get('mcpServers'):
-            _mcp_toolset = FastMCPToolset(mcp_config)
+            _mcp_toolset = FastMCPToolset(mcp_config, id="deep-mcp")
             print(f"🔄 Loaded {len(mcp_config['mcpServers'])} MCP servers")
         else:
             _mcp_toolset = None

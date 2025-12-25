@@ -10,6 +10,10 @@ from src.services.conversation_service import ConversationService
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
+# ===== Global Sandbox Manager =====
+# Reuse sandboxes by conversation_id to avoid creating new containers on every request
+_sandbox_manager: dict[int, "DockerSandbox"] = {}
+
 
 # ===== Response Models =====
 
@@ -172,9 +176,18 @@ async def chat_stream(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # Create sandbox with current working directory mounted to /workspace
-    volumes = build_sandbox_volumes()
-    sandbox = DockerSandbox(volumes=volumes)
+    # Reuse or create sandbox for this conversation
+    if conversation_id in _sandbox_manager:
+        sandbox = _sandbox_manager[conversation_id]
+        print(f"♻️  Reusing sandbox for conversation {conversation_id}")
+    else:
+        volumes = build_sandbox_volumes()
+        sandbox = DockerSandbox(
+            volumes=volumes,
+            session_id=f"{user_id}:{conversation_id}"  # Name container as user_id:conversation_id
+        )
+        _sandbox_manager[conversation_id] = sandbox
+        print(f"🆕 Created new sandbox for conversation {conversation_id} (session_id: {user_id}:{conversation_id})")
 
     # Create DeepAgentDeps with sandbox backend
     deps = DeepAgentDeps(
@@ -191,7 +204,7 @@ async def chat_stream(
         enable_mcp_tools=True,
         # history_processors=[deduplicate_stateful_tools_processor]  # Disabled: causes infinite tool call loops
     )
-    
+
     import json
 
     # Streaming generator
@@ -211,7 +224,12 @@ async def chat_stream(
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
-    
+        finally:
+            # Stop container after response completes to avoid resource waste
+            if sandbox._container is not None:
+                print(f"🛑 Stopping container for conversation {conversation_id}")
+                sandbox.stop()
+
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",

@@ -62,28 +62,6 @@ class TestCreateDeepAgent:
         agent = create_deep_agent(model=TEST_MODEL, subagents=subagents)
         assert agent is not None
 
-    def test_create_with_interrupt_on(self):
-        """Test creating an agent with interrupt_on config."""
-        agent = create_deep_agent(
-            model=TEST_MODEL,
-            interrupt_on={
-                "execute": True,
-                "write_file": True,
-            },
-        )
-        assert agent is not None
-
-    def test_create_with_interrupt_on_all_false(self):
-        """Test creating an agent with interrupt_on all False (no DeferredToolRequests)."""
-        agent = create_deep_agent(
-            model=TEST_MODEL,
-            interrupt_on={
-                "execute": False,
-                "write_file": False,
-            },
-        )
-        assert agent is not None
-
 
 class TestCreateDefaultDeps:
     """Tests for create_default_deps."""
