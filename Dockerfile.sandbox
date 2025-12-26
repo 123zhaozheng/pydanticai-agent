@@ -1,0 +1,94 @@
+# ==============================================================================
+# Pydantic Deep Agent - Data Analysis Sandbox Image
+# ==============================================================================
+# 这个镜像包含常用的数据分析和办公文档处理库
+#
+# 使用方法:
+#   docker build -t pydantic-deep-sandbox -f Dockerfile.sandbox .
+#   或在 DockerSandbox 中指定: DockerSandbox(image="pydantic-deep-sandbox")
+# ==============================================================================
+
+FROM python:3.12-slim
+
+# 设置环境变量
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # 基础工具
+    curl \
+    wget \
+    git \
+    unzip \
+    # 文本处理
+    jq \
+    # 编译依赖 (某些 Python 包需要)
+    build-essential \
+    libffi-dev \
+    # 图像处理 (matplotlib, PIL 等需要)
+    libpng-dev \
+    libjpeg-dev \
+    # 字体支持 (图表中文显示)
+    fonts-wqy-microhei \
+    fonts-wqy-zenhei \
+    # 清理缓存
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# ==============================================================================
+# Python 数据分析库
+# ==============================================================================
+RUN pip install --no-cache-dir \
+    # 数据处理核心
+    pandas>=2.0.0 \
+    numpy>=1.24.0 \
+    # Excel 处理
+    openpyxl>=3.1.0 \
+    xlrd>=2.0.0 \
+    xlsxwriter>=3.1.0 \
+    python-docx>=0.8.0 \
+    # CSV/JSON 处理
+    python-dateutil>=2.8.0 \
+    # 数据可视化
+    matplotlib>=3.7.0 \
+    seaborn>=0.12.0 \
+    plotly>=5.15.0 \
+    # 统计分析
+    scipy>=1.10.0 \
+    statsmodels>=0.14.0 \
+    # 网络请求
+    requests>=2.31.0 \
+    httpx>=0.24.0 \
+    # 文本处理
+    chardet>=5.0.0 \
+    # JSON 处理
+    orjson>=3.9.0 \
+    # 工具库
+    tqdm>=4.65.0 \
+    tabulate>=0.9.0
+
+# ==============================================================================
+# 可选: 机器学习库 (取消注释启用)
+# ==============================================================================
+# RUN pip install --no-cache-dir \
+#     scikit-learn>=1.3.0 \
+#     xgboost>=1.7.0 \
+#     lightgbm>=4.0.0
+
+# 设置工作目录
+WORKDIR /workspace
+
+# 创建必要的目录结构
+RUN mkdir -p /workspace/uploads \
+    && mkdir -p /workspace/intermediate \
+    && mkdir -p /workspace/skills
+
+# 设置 matplotlib 中文字体
+RUN mkdir -p /root/.config/matplotlib && \
+    echo "font.family: WenQuanYi Micro Hei" > /root/.config/matplotlib/matplotlibrc
+
+# 默认命令
+CMD ["python3"]

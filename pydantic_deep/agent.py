@@ -329,6 +329,7 @@ def create_deep_agent(  # noqa: C901
     # Create the agent (deps will be passed at runtime via agent.run())
     agent: Agent[DeepAgentDeps, Any] = Agent(
         model,
+        retries=3,  # 最大重试次数,处理模型输出格式错误
         **agent_create_kwargs,
     )
 

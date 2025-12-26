@@ -257,7 +257,7 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
 
     def __init__(
         self,
-        image: str = "python:3.12-slim",
+        image: str = "pydantic-deep-sandbox",  # 使用数据分析镜像 (需先 docker build -t pydantic-deep-sandbox -f Dockerfile.sandbox .)
         sandbox_id: str | None = None,
         work_dir: str = "/workspace",
         auto_remove: bool = True,

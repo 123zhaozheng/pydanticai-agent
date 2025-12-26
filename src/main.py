@@ -6,16 +6,30 @@ project_root = Path(__file__).resolve().parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-# Configure logging
+# Configure logging (reduce noise from httpx since Logfire handles it)
 import logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
 logging.getLogger("pydantic_ai").setLevel(logging.DEBUG)
-logging.getLogger("httpx").setLevel(logging.DEBUG)  # 查看完整 API 请求/响应
+logging.getLogger("httpx").setLevel(logging.WARNING)  # Reduce httpx noise, Logfire will capture details
 
 # Configure Logfire for PydanticAI observability (官方推荐)
 import logfire
-logfire.configure(send_to_logfire=False)  # 本地控制台输出，不发送到云端
-logfire.instrument_pydantic_ai()  # 监控所有 PydanticAI Agent 调用
+
+logfire.configure(
+    send_to_logfire=False,  # 本地控制台输出，不发送到云端
+    console=logfire.ConsoleOptions(
+        colors='auto',
+        span_style='indented',   # 缩进显示,更清晰
+        verbose=True,            # 详细输出
+        include_timestamps=True, # 包含时间戳
+    )
+)
+
+# 1️⃣ 监控 PydanticAI Agent 调用 (Agent run, 模型调用, 工具执行)
+logfire.instrument_pydantic_ai()
+
+# 2️⃣ 监控 HTTP 请求 (发送给 LLM 的完整请求和响应)
+logfire.instrument_httpx(capture_all=True)
 
 from contextlib import asynccontextmanager
 

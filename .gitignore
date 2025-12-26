@@ -100,3 +100,9 @@ Thumbs.db
 # Local development
 playground/
 *.local
+
+# Sandbox
+intermediate/
+skills/
+uploads/
+
