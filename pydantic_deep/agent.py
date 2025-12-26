@@ -124,6 +124,9 @@ def create_deep_agent(  # noqa: C901
     enable_mcp_tools: bool = True,
     user_id: int | None = None,
     conversation_id: int | None = None,
+    # Selective tool/skill loading (for frontend control with permission intersection)
+    mcp_tool_names: list[str] | None = None,  # Filter MCP tools by name (None = all)
+    skill_names: list[str] | None = None,  # Filter skills by name (None = all)
     **agent_kwargs: Any,
 ) -> Agent[DeepAgentDeps, OutputDataT] | Agent[DeepAgentDeps, str]:
     """Create a deep agent with planning, filesystem, subagent, and skills capabilities.
@@ -256,13 +259,17 @@ def create_deep_agent(  # noqa: C901
         else:
             initial_skills = []
         
+        # Filter skills by name if specified (frontend selection)
+        if skill_names is not None and initial_skills:
+            initial_skills = [s for s in initial_skills if s.get("name") in skill_names]
+        
         # Filter skills by permission if enabled
         # Note: This requires deps.user_id to be set when running the agent
         # The filtering will happen at runtime based on the user
         skills_toolset = create_skills_toolset(
             id="deep-skills",
             directories=skill_directories,
-            skills=skills,
+            skills=initial_skills,  # Use filtered skills
         )
         all_toolsets.append(skills_toolset)
         
@@ -284,18 +291,18 @@ def create_deep_agent(  # noqa: C901
         "history_processors": history_processors or [],
     }
     
-    # Load MCP tools if enabled
+    # Load MCP tools if enabled (creates fresh connection per agent)
     if enable_mcp_tools:
         try:
-            from pydantic_deep.toolsets.mcp import get_mcp_toolset
-            mcp_toolset = get_mcp_toolset()
+            from pydantic_deep.toolsets.mcp import create_mcp_toolset
+            mcp_toolset = create_mcp_toolset()
             if mcp_toolset:
                 all_toolsets.append(mcp_toolset)
-                print(f"✅ Using global MCP toolset")
+                print(f"✅ Created MCP toolset for this agent")
             else:
                 print("ℹ️  No MCP servers configured")
         except Exception as e:
-            print(f"❌ Failed to load MCP toolset: {e}")
+            print(f"❌ Failed to create MCP toolset: {e}")
     
     # Update toolsets in kwargs
     agent_create_kwargs["toolsets"] = all_toolsets

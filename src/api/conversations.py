@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from datetime import datetime
+from typing import Literal
 
 from src.database import get_db
 from src.services.conversation_service import ConversationService
@@ -136,6 +137,19 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, description="User message")
     model_name: str | None = Field(None, description="Model config name (uses default if not specified)")
     upload_path: str | None = Field(None, description="Custom upload directory path on host (optional)")
+    enable_subagents: bool = Field(False, description="Enable subagent delegation for complex tasks")
+    
+    # Tool and skill selection (frontend control with permission intersection)
+    # - "auto": Automatically inject all tools/skills user has permission for (default)
+    # - list[str]: Specific tool/skill names to use (will be intersected with user permissions)
+    mcp_tools: Literal["auto"] | list[str] = Field(
+        "auto", 
+        description="MCP tools to use: 'auto' for all permitted, or list of specific tool names"
+    )
+    skills: Literal["auto"] | list[str] = Field(
+        "auto",
+        description="Skills to use: 'auto' for all permitted, or list of specific skill names"
+    )
 
 
 @router.post("/{conversation_id}/chat")
@@ -204,11 +218,20 @@ async def chat_stream(
     )
 
     # Create Agent (history cleanup disabled to prevent infinite loops)
+    # Determine MCP tools and skills selection:
+    # - "auto" -> None (include all permitted)
+    # - list[str] -> pass the list for filtering (will be intersected with permissions)
+    mcp_tool_filter = None if body.mcp_tools == "auto" else body.mcp_tools
+    skill_filter = None if body.skills == "auto" else body.skills
+    
     agent = create_deep_agent(
         model=model,
         backend=sandbox,
+        include_subagents=body.enable_subagents,  # Enable subagents based on request
         enable_permission_filtering=False,
         enable_mcp_tools=True,
+        mcp_tool_names=mcp_tool_filter,  # Frontend-selected MCP tools
+        skill_names=skill_filter,  # Frontend-selected skills
         # history_processors=[deduplicate_stateful_tools_processor]  # Disabled: causes infinite tool call loops
     )
 

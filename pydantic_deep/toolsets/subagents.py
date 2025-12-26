@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import RunContext
 from pydantic_ai.toolsets import FunctionToolset
 
 from pydantic_deep.deps import DeepAgentDeps
@@ -121,32 +121,27 @@ def create_subagent_toolset(
         if subagent_type in ctx.deps.subagents:
             subagent = ctx.deps.subagents[subagent_type]
         else:
-            # Create the subagent on-the-fly
-            from pydantic_deep.toolsets.filesystem import create_filesystem_toolset
-            from pydantic_deep.toolsets.todo import create_todo_toolset
+            # Create the subagent using factory function to ensure proper backend reuse
+            from pydantic_deep import create_deep_agent
 
             model = config.get("model", default_model)
             tools = config.get("tools", [])
 
-            # Create toolsets for the subagent
-            fs_toolset = create_filesystem_toolset(
-                include_execute=True,
-                require_write_approval=False,
-                require_execute_approval=False,
-            )
-            todo_toolset = create_todo_toolset()
-
-            subagent = Agent(
-                model,
+            # Use factory function to create subagent with same backend as parent
+            subagent = create_deep_agent(
+                model=model,
                 instructions=config["instructions"],
-                deps_type=type(ctx.deps),
-                toolsets=[fs_toolset, todo_toolset],
+                backend=ctx.deps.backend,  # Reuse parent agent's DockerSandbox
+                include_todos=True,
+                include_filesystem=True,
+                include_execute=True,
+                include_skills=False,  # Subagents don't need skills system
+                include_subagents=False,  # Prevent nested subagents
+                include_general_purpose_subagent=False,
+                enable_permission_filtering=False,
+                enable_mcp_tools=False,
+                tools=tools,  # Pass custom tools
             )
-
-            # Add custom tools if any
-            for tool in tools:
-                if callable(tool):
-                    subagent.tool(tool)
 
             # Cache the subagent
             ctx.deps.subagents[subagent_type] = subagent
