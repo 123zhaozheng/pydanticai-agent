@@ -358,7 +358,7 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
                 # OS-specific defaults
                 system = platform.system()
                 if system == "Windows":
-                    base_dir = "D:/pydantic-deep-data"
+                    base_dir = "C:/code/python/pydantic-deepagents"
                 else:
                     base_dir = "/var/pydantic-deep"
 

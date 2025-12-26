@@ -103,15 +103,17 @@ class MCPServerService:
         self.session.add(server)
         self.session.commit()
         self.session.refresh(server)
-        
-        # Reload global MCP toolset to include new server
+
+        # Invalidate config cache and reload global MCP toolset
         try:
-            from src.main import reload_mcp_toolset
+            from pydantic_deep.mcp_config import invalidate_config_cache
+            from pydantic_deep.toolsets.mcp import reload_mcp_toolset
+            invalidate_config_cache()  # Force cache refresh
             reload_mcp_toolset()
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(f"Failed to reload MCP toolset: {e}")
-        
+
         return server
     
     def update_server(self, server_name: str, updates: dict) -> McpServer:
@@ -143,14 +145,16 @@ class MCPServerService:
         
         self.session.commit()
         self.session.refresh(server)
-        
-        # Reload global MCP toolset to reflect changes
+
+        # Invalidate config cache and reload global MCP toolset
         try:
-            from src.main import reload_mcp_toolset
+            from pydantic_deep.mcp_config import invalidate_config_cache
+            from pydantic_deep.toolsets.mcp import reload_mcp_toolset
+            invalidate_config_cache()
             reload_mcp_toolset()
         except Exception:
             pass
-        
+
         return server
     
     def delete_server(self, server_name: str, soft_delete: bool = True) -> bool:
@@ -171,14 +175,16 @@ class MCPServerService:
         else:
             self.session.delete(server)
             self.session.commit()
-            
-        # Reload global MCP toolset to remove deleted server
+
+        # Invalidate config cache and reload global MCP toolset
         try:
-            from src.main import reload_mcp_toolset
+            from pydantic_deep.mcp_config import invalidate_config_cache
+            from pydantic_deep.toolsets.mcp import reload_mcp_toolset
+            invalidate_config_cache()
             reload_mcp_toolset()
         except Exception:
             pass
-        
+
         return True
     
     def test_connection(self, server_name: str) -> dict:
