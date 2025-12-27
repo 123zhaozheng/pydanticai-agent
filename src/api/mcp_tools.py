@@ -165,3 +165,87 @@ async def test_mcp_server(
     service = MCPServerService(db)
     result = service.test_connection(server_name)
     return result
+
+
+# ===== Permission Endpoints =====
+
+class RolePermissionRequest(BaseModel):
+    """Request for role permission."""
+    can_use: bool = True
+    can_configure: bool = False
+
+
+class DeptPermissionRequest(BaseModel):
+    """Request for department permission."""
+    is_allowed: bool = True
+
+
+class PermissionResponse(BaseModel):
+    """Generic permission response."""
+    message: str
+    success: bool = True
+
+
+@router.post("/{server_name}/permissions/role/{role_id}", response_model=PermissionResponse)
+async def add_server_role_permission(
+    server_name: str,
+    role_id: int,
+    body: RolePermissionRequest,
+    db: Session = Depends(get_db),
+):
+    """为角色添加 MCP Server 权限。"""
+    service = MCPServerService(db)
+    perm = service.add_role_permission(
+        server_name, role_id,
+        can_use=body.can_use,
+        can_configure=body.can_configure,
+    )
+    if not perm:
+        raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
+    return PermissionResponse(message=f"已为角色 {role_id} 添加 MCP Server '{server_name}' 权限")
+
+
+@router.delete("/{server_name}/permissions/role/{role_id}", response_model=PermissionResponse)
+async def remove_server_role_permission(
+    server_name: str,
+    role_id: int,
+    db: Session = Depends(get_db),
+):
+    """移除角色的 MCP Server 权限。"""
+    service = MCPServerService(db)
+    success = service.remove_role_permission(server_name, role_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="权限不存在")
+    return PermissionResponse(message=f"已移除角色 {role_id} 的 MCP Server '{server_name}' 权限")
+
+
+@router.post("/{server_name}/permissions/department/{department_id}", response_model=PermissionResponse)
+async def add_server_department_permission(
+    server_name: str,
+    department_id: int,
+    body: DeptPermissionRequest,
+    db: Session = Depends(get_db),
+):
+    """为部门添加 MCP Server 权限。"""
+    service = MCPServerService(db)
+    perm = service.add_department_permission(
+        server_name, department_id,
+        is_allowed=body.is_allowed,
+    )
+    if not perm:
+        raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found")
+    return PermissionResponse(message=f"已为部门 {department_id} 添加 MCP Server '{server_name}' 权限")
+
+
+@router.delete("/{server_name}/permissions/department/{department_id}", response_model=PermissionResponse)
+async def remove_server_department_permission(
+    server_name: str,
+    department_id: int,
+    db: Session = Depends(get_db),
+):
+    """移除部门的 MCP Server 权限。"""
+    service = MCPServerService(db)
+    success = service.remove_department_permission(server_name, department_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="权限不存在")
+    return PermissionResponse(message=f"已移除部门 {department_id} 的 MCP Server '{server_name}' 权限")

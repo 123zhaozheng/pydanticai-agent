@@ -263,6 +263,8 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
         base_dir: str | None = None,
         # Image configuration for capability description
         image_config: "ImageConfig | None" = None,
+        # Skill permission filtering
+        allowed_skill_names: list[str] | None = None,
     ):
         """Initialize Docker sandbox.
 
@@ -281,6 +283,7 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
             base_dir: Base directory on host for all mounts (default from env or OS-specific).
             image_config: ImageConfig describing the Docker image capabilities. If provided, 
                          image and work_dir default to config values if not explicitly set.
+            allowed_skill_names: List of skill names user has permission to access. If None, all skills are mounted.
         """
         # session_id is an alias for sandbox_id
         effective_id = session_id or sandbox_id
@@ -292,6 +295,7 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
         self._last_activity = time.time()
         self._user_id = user_id
         self._conversation_id = conversation_id
+        self._allowed_skill_names = allowed_skill_names  # For skill permission filtering
         
         # Store image config for capability description
         self._image_config = image_config
@@ -327,7 +331,7 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
         Creates three directories on host and mounts them to container:
         1. uploads/{user_id}/{conversation_id} -> /workspace/uploads (rw)
         2. intermediate/{user_id}/{conversation_id} -> /workspace/intermediate (rw)
-        3. skills/ -> /workspace/skills (ro)
+        3. skills/ -> /workspace/skills (ro) - filtered by allowed_skill_names
 
         Args:
             user_id: User ID for directory isolation.
@@ -370,13 +374,22 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
         intermediate_dir.mkdir(parents=True, exist_ok=True)
         volumes[str(intermediate_dir)] = {"bind": "/workspace/intermediate", "mode": "rw"}
 
-        # 3. Skills directory (read-only, shared across all users)
+        # 3. Skills directory (read-only, with permission filtering)
         skills_dir = Path(base_dir) / "skills"
-        if skills_dir.exists():
-            volumes[str(skills_dir)] = {"bind": "/workspace/skills", "mode": "ro"}
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Mount skills based on allowed_skill_names
+        if self._allowed_skill_names is not None:
+            # Mount only permitted skill subdirectories
+            for skill_name in self._allowed_skill_names:
+                skill_path = skills_dir / skill_name
+                if skill_path.exists() and skill_path.is_dir():
+                    volumes[str(skill_path)] = {
+                        "bind": f"/workspace/skills/{skill_name}",
+                        "mode": "ro"
+                    }
         else:
-            # Create skills directory if it doesn't exist
-            skills_dir.mkdir(parents=True, exist_ok=True)
+            # No filtering, mount entire skills directory
             volumes[str(skills_dir)] = {"bind": "/workspace/skills", "mode": "ro"}
 
         # Debug: Log volumes configuration

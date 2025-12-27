@@ -263,3 +263,119 @@ class MCPServerService:
                 "message": f"Failed to test connection: {e}",
                 "error": str(e)
             }
+    
+    # ===== Permission Management =====
+    
+    def add_role_permission(
+        self,
+        server_name: str,
+        role_id: int,
+        can_use: bool = True,
+        can_configure: bool = False,
+    ) -> RoleToolPermission | None:
+        """为角色添加 MCP Server 权限。"""
+        server = self.get_server(server_name)
+        if not server:
+            return None
+        
+        # Check existing
+        existing = self.session.query(RoleToolPermission).filter(
+            and_(
+                RoleToolPermission.role_id == role_id,
+                RoleToolPermission.server_id == server.id,
+            )
+        ).first()
+        
+        if existing:
+            existing.can_use = can_use
+            existing.can_configure = can_configure
+            self.session.commit()
+            return existing
+        
+        perm = RoleToolPermission(
+            role_id=role_id,
+            server_id=server.id,
+            can_use=can_use,
+            can_configure=can_configure,
+        )
+        self.session.add(perm)
+        self.session.commit()
+        self.session.refresh(perm)
+        return perm
+    
+    def remove_role_permission(self, server_name: str, role_id: int) -> bool:
+        """移除角色的 MCP Server 权限。"""
+        server = self.get_server(server_name)
+        if not server:
+            return False
+        
+        perm = self.session.query(RoleToolPermission).filter(
+            and_(
+                RoleToolPermission.role_id == role_id,
+                RoleToolPermission.server_id == server.id,
+            )
+        ).first()
+        
+        if not perm:
+            return False
+        
+        self.session.delete(perm)
+        self.session.commit()
+        return True
+    
+    def add_department_permission(
+        self,
+        server_name: str,
+        department_id: int,
+        is_allowed: bool = True,
+    ) -> "DepartmentToolPermission | None":
+        """为部门添加 MCP Server 权限。"""
+        from src.models.tools_skills import DepartmentToolPermission
+        
+        server = self.get_server(server_name)
+        if not server:
+            return None
+        
+        existing = self.session.query(DepartmentToolPermission).filter(
+            and_(
+                DepartmentToolPermission.department_id == department_id,
+                DepartmentToolPermission.server_id == server.id,
+            )
+        ).first()
+        
+        if existing:
+            existing.is_allowed = is_allowed
+            self.session.commit()
+            return existing
+        
+        perm = DepartmentToolPermission(
+            department_id=department_id,
+            server_id=server.id,
+            is_allowed=is_allowed,
+        )
+        self.session.add(perm)
+        self.session.commit()
+        self.session.refresh(perm)
+        return perm
+    
+    def remove_department_permission(self, server_name: str, department_id: int) -> bool:
+        """移除部门的 MCP Server 权限。"""
+        from src.models.tools_skills import DepartmentToolPermission
+        
+        server = self.get_server(server_name)
+        if not server:
+            return False
+        
+        perm = self.session.query(DepartmentToolPermission).filter(
+            and_(
+                DepartmentToolPermission.department_id == department_id,
+                DepartmentToolPermission.server_id == server.id,
+            )
+        ).first()
+        
+        if not perm:
+            return False
+        
+        self.session.delete(perm)
+        self.session.commit()
+        return True

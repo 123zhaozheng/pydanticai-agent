@@ -195,13 +195,20 @@ async def chat_stream(
         sandbox = _sandbox_manager[conversation_id]
         print(f"♻️  Reusing sandbox for conversation {conversation_id}")
     else:
-        # Create sandbox with automatic volume mounting and image config
+        # Get allowed skill names for permission filtering
+        from src.services.skill_service import SkillService
+        skill_service = SkillService(db)
+        allowed_skill_names = skill_service.get_allowed_skill_names(user_id)
+        print(f"🔑 User {user_id} has access to {len(allowed_skill_names)} skills: {allowed_skill_names}")
+        
+        # Create sandbox with automatic volume mounting, image config, and skill filtering
         sandbox = DockerSandbox(
             user_id=user_id,
             conversation_id=conversation_id,
             upload_path=body.upload_path,  # Optional custom upload path
             session_id=f"{user_id}:{conversation_id}",  # Name container as user_id:conversation_id
             image_config=get_default_sandbox_config(),  # 注入环境能力描述到系统提示
+            allowed_skill_names=allowed_skill_names,  # 只挂载有权限的技能目录
         )
         _sandbox_manager[conversation_id] = sandbox
         print(f"🆕 Created new sandbox for conversation {conversation_id} (session_id: {user_id}:{conversation_id})")
