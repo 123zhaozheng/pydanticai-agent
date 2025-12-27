@@ -281,11 +281,11 @@ def get_filesystem_system_prompt(deps: DeepAgentDeps) -> str:
 
     if isinstance(deps.backend, SandboxProtocol):
         parts.append(SANDBOX_SYSTEM_PROMPT)
-
-    # Add runtime info if available
-    runtime_info = _get_runtime_system_prompt(deps)
-    if runtime_info:
-        parts.append(runtime_info)
+        
+        # Add image config info if available
+        image_info = _get_image_config_prompt(deps.backend)
+        if image_info:
+            parts.append(image_info)
 
     # Add files summary if any
     files_summary = deps.get_files_summary()
@@ -295,44 +295,40 @@ def get_filesystem_system_prompt(deps: DeepAgentDeps) -> str:
     return "\n".join(parts)
 
 
-def _get_runtime_system_prompt(deps: DeepAgentDeps) -> str | None:
-    """Generate system prompt section for runtime environment.
+def _get_image_config_prompt(backend: SandboxProtocol) -> str | None:
+    """Generate system prompt section for image configuration.
 
     Args:
-        deps: The agent dependencies.
+        backend: The sandbox backend.
 
     Returns:
-        Runtime info prompt section, or None if no runtime configured.
+        Image info prompt section, or None if no config available.
     """
-    backend = deps.backend
-
-    # Check if backend has runtime attribute (DockerSandbox with runtime)
-    runtime = getattr(backend, "_runtime", None)
-    if runtime is None:
+    # Check if backend has _image_config attribute
+    image_config = getattr(backend, "_image_config", None)
+    if image_config is None:
         return None
 
     lines = [
-        "## Runtime Environment",
+        "## 执行环境",
         "",
-        f"**Name:** {runtime.name}",
+        f"**环境**: {image_config.name}",
     ]
 
-    if runtime.description:
-        lines.append(f"**Description:** {runtime.description}")
+    if image_config.description:
+        lines.append(f"**描述**: {image_config.description}")
 
-    lines.append(f"**Working directory:** {runtime.work_dir}")
+    lines.append(f"**工作目录**: {image_config.work_dir}")
 
-    if runtime.packages:
+    if image_config.pre_installed_packages:
         lines.append("")
-        lines.append("**Pre-installed packages** (use directly without installation):")
-        for pkg in runtime.packages:
+        lines.append("**已安装的库** (无需 pip install):")
+        for pkg in image_config.pre_installed_packages:
             lines.append(f"- {pkg}")
 
-    if runtime.env_vars:
+    if image_config.capabilities:
         lines.append("")
-        lines.append("**Environment variables:**")
-        for key, value in runtime.env_vars.items():
-            lines.append(f"- `{key}={value}`")
+        lines.append(f"**能力**: {', '.join(image_config.capabilities)}")
 
     return "\n".join(lines)
 

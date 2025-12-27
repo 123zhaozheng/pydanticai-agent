@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Union
+
 from pydantic_ai import RunContext
+from pydantic_ai.models import Model
 from pydantic_ai.toolsets import FunctionToolset
 
 from pydantic_deep.deps import DeepAgentDeps
@@ -53,7 +56,7 @@ TASK_TOOL_DESCRIPTION = """
 
 def create_subagent_toolset(
     subagents: list[SubAgentConfig] | None = None,
-    default_model: str = "openai:gpt-4.1",
+    default_model: str | Model | None = None,
     include_general_purpose: bool = True,
     id: str | None = None,
 ) -> FunctionToolset[DeepAgentDeps]:

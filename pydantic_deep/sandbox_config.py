@@ -1,48 +1,59 @@
-"""Sandbox configuration utilities for simplified workspace mounting.
+"""Default Docker image configurations for sandbox.
 
-This module provides functions to build Docker volume configurations
-for mounting the current working directory into the sandbox.
+This module provides pre-defined ImageConfig instances describing
+the capabilities of Docker images used by DockerSandbox.
 """
 
 from __future__ import annotations
 
-import os
+from pydantic_deep.types import ImageConfig
+
+# Default data analysis sandbox image
+DEFAULT_SANDBOX_CONFIG = ImageConfig(
+    name="data-analysis",
+    image="pydantic-deep-sandbox",
+    description="数据分析执行环境,支持 Excel/CSV 处理、统计分析、数据可视化和 Python 脚本执行",
+    work_dir="/workspace",
+    pre_installed_packages=[
+        # 数据处理
+        "pandas",
+        "numpy",
+        # Excel 处理
+        "openpyxl",
+        "xlrd",
+        "xlsxwriter",
+        "python-docx",
+        # 可视化
+        "matplotlib",
+        "seaborn",
+        "plotly",
+        # 统计分析
+        "scipy",
+        "statsmodels",
+        # 网络请求
+        "requests",
+        "httpx",
+        # 工具库
+        "tqdm",
+        "tabulate",
+        "chardet",
+        "orjson",
+    ],
+    capabilities=[
+        "excel",
+        "csv",
+        "data-analysis",
+        "visualization",
+        "statistics",
+        "python",
+    ],
+)
 
 
-def build_sandbox_volumes(
-    work_dir: str | None = None,
-) -> dict[str, dict[str, str]]:
-    """Build Docker volume configuration for workspace sandbox.
-
-    Mounts the current working directory (or specified directory) directly
-    into the container at /workspace, ensuring the model sees the same
-    absolute paths as the host system.
-
-    Args:
-        work_dir: Directory to mount (defaults to current working directory)
-
+def get_default_sandbox_config() -> ImageConfig:
+    """Get the default sandbox image configuration.
+    
     Returns:
-        Docker volumes dict: {host_path: {'bind': container_path, 'mode': 'rw'}}
-
-    Example:
-        ```python
-        # Mount current directory to /workspace
-        volumes = build_sandbox_volumes()
-        sandbox = DockerSandbox(volumes=volumes)
-
-        # Mount specific directory
-        volumes = build_sandbox_volumes("/path/to/project")
-        sandbox = DockerSandbox(volumes=volumes)
-        ```
+        ImageConfig for the default data analysis sandbox.
     """
-    if work_dir is None:
-        work_dir = os.getcwd()
-
-    volumes = {
-        os.path.abspath(work_dir): {
-            'bind': '/workspace',
-            'mode': 'rw'
-        }
-    }
-
-    return volumes
+    return DEFAULT_SANDBOX_CONFIG

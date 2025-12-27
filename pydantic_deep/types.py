@@ -138,59 +138,46 @@ class UploadedFile(TypedDict):
     line_count: int | None  # Number of lines (for text files)
 
 
-class RuntimeConfig(BaseModel):
-    """Configuration for a runtime environment.
+class ImageConfig(BaseModel):
+    """Docker 镜像配置 (描述已有镜像的能力,不动态构建).
 
-    A runtime defines a pre-configured execution environment with specific
-    packages and settings. Can be used with DockerSandbox to provide
-    ready-to-use environments without manual package installation.
+    用于向模型描述执行环境的能力,让模型知道可以使用哪些工具和库。
 
     Example:
         ```python
-        from pydantic_deep import RuntimeConfig, DockerSandbox
+        from pydantic_deep import ImageConfig, DockerSandbox
 
-        # Custom runtime with ML packages
-        ml_runtime = RuntimeConfig(
-            name="ml-env",
-            description="Machine learning environment",
-            base_image="python:3.12-slim",
-            packages=["torch", "transformers", "datasets"],
+        # 定义数据分析镜像配置
+        config = ImageConfig(
+            name="data-analysis",
+            image="pydantic-deep-sandbox",
+            description="数据分析环境,支持 Excel 处理、统计分析和可视化",
+            pre_installed_packages=["pandas", "openpyxl", "matplotlib"],
+            capabilities=["excel", "data-analysis", "visualization"],
         )
 
-        sandbox = DockerSandbox(runtime=ml_runtime)
+        sandbox = DockerSandbox(image_config=config)
         ```
     """
 
     name: str
-    """Unique name for the runtime (e.g., "python-datascience")."""
+    """配置名称 (如 "data-analysis", "web-dev")."""
+
+    image: str
+    """Docker 镜像名 (如 "pydantic-deep-sandbox")."""
 
     description: str = ""
-    """Human-readable description of the runtime."""
-
-    # Image source (one of these)
-    image: str | None = None
-    """Ready-to-use Docker image (e.g., "myregistry/python-ds:v1")."""
-
-    base_image: str | None = None
-    """Base image to build upon (e.g., "python:3.12-slim")."""
-
-    # Packages to install (only if base_image)
-    packages: list[str] = []
-    """Packages to install (e.g., ["pandas", "numpy", "matplotlib"])."""
-
-    package_manager: Literal["pip", "npm", "apt", "cargo"] = "pip"
-    """Package manager to use for installation."""
-
-    # Additional configuration
-    setup_commands: list[str] = []
-    """Additional setup commands to run (e.g., ["apt-get update"])."""
-
-    env_vars: dict[str, str] = {}
-    """Environment variables to set in the container."""
+    """镜像能力描述,会注入到模型的系统提示中."""
 
     work_dir: str = "/workspace"
-    """Working directory inside the container."""
+    """容器内的工作目录."""
 
-    # Cache settings
-    cache_image: bool = True
-    """Whether to cache the built image locally."""
+    pre_installed_packages: list[str] = []
+    """预装的包列表,告知模型无需 pip install."""
+
+    capabilities: list[str] = []
+    """能力标签 (如 ["excel", "charts", "pandas"]),可用于过滤和展示."""
+
+
+# 保留 RuntimeConfig 别名以兼容测试
+RuntimeConfig = ImageConfig

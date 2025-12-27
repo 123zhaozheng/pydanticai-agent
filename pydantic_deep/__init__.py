@@ -57,7 +57,7 @@ from pydantic_deep.processors import (
     SummarizationProcessor,
     create_summarization_processor,
 )
-from pydantic_deep.runtimes import BUILTIN_RUNTIMES, get_runtime
+from pydantic_deep.sandbox_config import DEFAULT_SANDBOX_CONFIG, get_default_sandbox_config
 from pydantic_deep.sandbox_utils import (
     discover_container_files,
     get_file_info,
@@ -71,8 +71,8 @@ from pydantic_deep.types import (
     FileData,
     FileInfo,
     GrepMatch,
+    ImageConfig,
     ResponseFormat,
-    RuntimeConfig,
     Skill,
     SkillDirectory,
     SkillFrontmatter,
@@ -95,11 +95,11 @@ __all__ = [
     "StateBackend",  # In-memory backend for development
     "BaseSandbox",  # Abstract base class
     "DockerSandbox",  # Recommended: Isolated Docker environment
+    # Image configuration
+    "ImageConfig",
+    "DEFAULT_SANDBOX_CONFIG",
+    "get_default_sandbox_config",
     # Note: FilesystemBackend and CompositeBackend are deprecated
-    # Runtimes
-    "RuntimeConfig",
-    "BUILTIN_RUNTIMES",
-    "get_runtime",
     # Sandbox utilities
     "discover_container_files",
     "list_container_directories",

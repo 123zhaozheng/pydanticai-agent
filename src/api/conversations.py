@@ -173,7 +173,7 @@ async def chat_stream(
     ```
     """
     from fastapi.responses import StreamingResponse
-    from pydantic_deep import create_deep_agent, discover_container_files
+    from pydantic_deep import create_deep_agent, discover_container_files, get_default_sandbox_config
     from pydantic_deep.deps import DeepAgentDeps
     from pydantic_deep.backends.sandbox import DockerSandbox
     # from pydantic_deep.processors.cleanup import deduplicate_stateful_tools_processor
@@ -195,12 +195,13 @@ async def chat_stream(
         sandbox = _sandbox_manager[conversation_id]
         print(f"♻️  Reusing sandbox for conversation {conversation_id}")
     else:
-        # Create sandbox with automatic volume mounting
+        # Create sandbox with automatic volume mounting and image config
         sandbox = DockerSandbox(
             user_id=user_id,
             conversation_id=conversation_id,
             upload_path=body.upload_path,  # Optional custom upload path
-            session_id=f"{user_id}:{conversation_id}"  # Name container as user_id:conversation_id
+            session_id=f"{user_id}:{conversation_id}",  # Name container as user_id:conversation_id
+            image_config=get_default_sandbox_config(),  # 注入环境能力描述到系统提示
         )
         _sandbox_manager[conversation_id] = sandbox
         print(f"🆕 Created new sandbox for conversation {conversation_id} (session_id: {user_id}:{conversation_id})")

@@ -14,7 +14,7 @@ from pydantic_deep.types import (
     ExecuteResponse,
     FileInfo,
     GrepMatch,
-    RuntimeConfig,
+    ImageConfig,
     WriteResult,
 )
 
@@ -235,33 +235,24 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
     Creates a Docker container for running commands in an isolated environment.
     Requires the docker Python package to be installed.
 
-    Supports RuntimeConfig for pre-configured environments with packages pre-installed.
-
     Example:
         ```python
-        from pydantic_deep import DockerSandbox, RuntimeConfig
-        from pydantic_deep.runtimes import BUILTIN_RUNTIMES
+        from pydantic_deep import DockerSandbox
 
-        # Use a built-in runtime
-        sandbox = DockerSandbox(runtime="python-datascience")
+        # Use default image
+        sandbox = DockerSandbox()
 
-        # Or use a custom runtime
-        custom_runtime = RuntimeConfig(
-            name="ml-env",
-            base_image="python:3.12-slim",
-            packages=["torch", "transformers"],
-        )
-        sandbox = DockerSandbox(runtime=custom_runtime)
+        # Or specify a custom image
+        sandbox = DockerSandbox(image="my-custom-image:latest")
         ```
     """
 
     def __init__(
         self,
-        image: str = "pydantic-deep-sandbox",  # 使用数据分析镜像 (需先 docker build -t pydantic-deep-sandbox -f Dockerfile.sandbox .)
+        image: str | None = None,  # Docker 镜像名,如不提供则使用 image_config 或默认值
         sandbox_id: str | None = None,
-        work_dir: str = "/workspace",
+        work_dir: str | None = None,  # 工作目录,如不提供则使用 image_config 或默认值
         auto_remove: bool = True,
-        runtime: RuntimeConfig | str | None = None,
         session_id: str | None = None,
         idle_timeout: int = 3600,
         volumes: dict[str, dict[str, str]] | None = None,
@@ -270,15 +261,16 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
         conversation_id: int | str | None = None,
         upload_path: str | None = None,
         base_dir: str | None = None,
+        # Image configuration for capability description
+        image_config: "ImageConfig | None" = None,
     ):
         """Initialize Docker sandbox.
 
         Args:
-            image: Docker image to use (ignored if runtime is provided).
+            image: Docker image to use. If not provided, uses image_config.image or default.
             sandbox_id: Unique identifier for this sandbox.
-            work_dir: Working directory inside container (ignored if runtime is provided).
+            work_dir: Working directory inside container. If not provided, uses image_config.work_dir or default.
             auto_remove: Remove container when stopped.
-            runtime: RuntimeConfig or name of built-in runtime.
             session_id: Alias for sandbox_id (for session management).
             idle_timeout: Timeout in seconds for idle cleanup (default: 1 hour).
             volumes: Volume mounts dict (host_path -> {'bind': container_path, 'mode': 'rw'|'ro'}).
@@ -287,6 +279,8 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
             conversation_id: Conversation ID for automatic volume mounting (optional).
             upload_path: Custom upload directory path on host (optional, overrides default).
             base_dir: Base directory on host for all mounts (default from env or OS-specific).
+            image_config: ImageConfig describing the Docker image capabilities. If provided, 
+                         image and work_dir default to config values if not explicitly set.
         """
         # session_id is an alias for sandbox_id
         effective_id = session_id or sandbox_id
@@ -298,6 +292,17 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
         self._last_activity = time.time()
         self._user_id = user_id
         self._conversation_id = conversation_id
+        
+        # Store image config for capability description
+        self._image_config = image_config
+        
+        # Determine image and work_dir from config or parameters
+        if image_config is not None:
+            self._image = image if image is not None else image_config.image
+            self._work_dir = work_dir if work_dir is not None else image_config.work_dir
+        else:
+            self._image = image if image is not None else "pydantic-deep-sandbox"
+            self._work_dir = work_dir if work_dir is not None else "/workspace"
 
         # Build volumes automatically if user_id and conversation_id are provided
         if user_id is not None and conversation_id is not None:
@@ -309,20 +314,6 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
             )
         else:
             self._volumes = volumes or {}
-
-        # Handle runtime configuration
-        if runtime is not None:
-            if isinstance(runtime, str):
-                from pydantic_deep.runtimes import get_runtime
-
-                runtime = get_runtime(runtime)
-            self._runtime: RuntimeConfig | None = runtime
-            self._work_dir = runtime.work_dir
-            self._image = image  # Will be overridden by _ensure_runtime_image()
-        else:
-            self._runtime = None
-            self._work_dir = work_dir
-            self._image = image
 
     def _build_auto_volumes(
         self,
@@ -398,11 +389,6 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
         return volumes
 
     @property
-    def runtime(self) -> RuntimeConfig | None:
-        """The runtime configuration for this sandbox."""
-        return self._runtime
-
-    @property
     def session_id(self) -> str:
         """Alias for sandbox id, used for session management."""
         return self._id
@@ -421,128 +407,20 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
 
         client = docker.from_env()
 
-        # Get the appropriate image (build if needed for runtime)
-        image = self._ensure_runtime_image(client)
-
-        # Prepare environment variables from runtime
-        env_vars = {}
-        if self._runtime and self._runtime.env_vars:
-            env_vars = self._runtime.env_vars
-
         # Debug: Log volumes being passed to Docker
         import logging
         logger = logging.getLogger(__name__)
-        logger.info(f"[DockerSandbox] Creating container with image: {image}")
+        logger.info(f"[DockerSandbox] Creating container with image: {self._image}")
         logger.info(f"[DockerSandbox] Volumes passed to Docker: {self._volumes}")
 
         self._container = client.containers.run(
-            image,
+            self._image,
             command="sleep infinity",
             detach=True,
             working_dir=self._work_dir,
             auto_remove=self._auto_remove,
-            environment=env_vars,
-            volumes=self._volumes,  # Use dynamic volumes
+            volumes=self._volumes,
         )
-
-    def _ensure_runtime_image(self, client: object) -> str:
-        """Ensure runtime image exists and return its name.
-
-        Args:
-            client: Docker client instance.
-
-        Returns:
-            Docker image name/tag to use.
-        """
-        if self._runtime is None:
-            return self._image
-
-        # If ready-to-use image is specified
-        if self._runtime.image:
-            return self._runtime.image
-
-        # If base_image + packages - need to build
-        if self._runtime.base_image:
-            return self._build_runtime_image(client)
-
-        # Fallback to default image
-        return self._image
-
-    def _build_runtime_image(self, client: object) -> str:
-        """Build a custom image with packages installed.
-
-        Args:
-            client: Docker client instance.
-
-        Returns:
-            Docker image tag for the built image.
-        """
-        import docker.errors
-
-        runtime = self._runtime
-        assert runtime is not None
-        assert runtime.base_image is not None
-
-        # Generate unique tag based on config
-        config_hash = hashlib.md5(runtime.model_dump_json().encode()).hexdigest()[:12]
-        image_tag = f"pydantic-deep-runtime:{runtime.name}-{config_hash}"
-
-        # Check if image exists (cache)
-        if runtime.cache_image:
-            try:
-                client.images.get(image_tag)  # type: ignore[attr-defined]
-                return image_tag
-            except docker.errors.ImageNotFound:
-                pass
-
-        # Build Dockerfile
-        dockerfile = self._generate_dockerfile(runtime)
-
-        # Build image
-        client.images.build(  # type: ignore[attr-defined]
-            fileobj=io.BytesIO(dockerfile.encode()),
-            tag=image_tag,
-            rm=True,
-        )
-
-        return image_tag
-
-    def _generate_dockerfile(self, runtime: RuntimeConfig) -> str:
-        """Generate Dockerfile content for runtime.
-
-        Args:
-            runtime: Runtime configuration.
-
-        Returns:
-            Dockerfile content as string.
-        """
-        assert runtime.base_image is not None
-        lines = [f"FROM {runtime.base_image}"]
-
-        # Setup commands
-        for cmd in runtime.setup_commands:
-            lines.append(f"RUN {cmd}")
-
-        # Install packages
-        if runtime.packages:
-            packages_str = " ".join(runtime.packages)
-            if runtime.package_manager == "pip":
-                lines.append(f"RUN pip install --no-cache-dir {packages_str}")
-            elif runtime.package_manager == "npm":
-                lines.append(f"RUN npm install -g {packages_str}")
-            elif runtime.package_manager == "apt":
-                lines.append(f"RUN apt-get update && apt-get install -y {packages_str}")
-            elif runtime.package_manager == "cargo":
-                lines.append(f"RUN cargo install {packages_str}")
-
-        # Environment variables
-        for key, value in runtime.env_vars.items():
-            lines.append(f"ENV {key}={value}")
-
-        # Work directory
-        lines.append(f"WORKDIR {runtime.work_dir}")
-
-        return "\n".join(lines)
 
     def execute(self, command: str, timeout: int | None = None) -> ExecuteResponse:
         """Execute command in Docker container."""

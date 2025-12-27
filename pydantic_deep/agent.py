@@ -237,12 +237,11 @@ def create_deep_agent(  # noqa: C901
         all_toolsets.append(fs_toolset)
 
     if include_subagents:
-        # For subagents, convert model to string if it's a Model instance
-        subagent_model = model if isinstance(model, str) else DEFAULT_MODEL
+        # Pass the model directly to subagents (supports both str and Model instances)
         subagent_toolset = create_subagent_toolset(
             id="deep-subagents",
             subagents=subagents,
-            default_model=subagent_model,
+            default_model=model,  # Pass model directly (str or Model)
             include_general_purpose=include_general_purpose_subagent,
         )
         all_toolsets.append(subagent_toolset)
