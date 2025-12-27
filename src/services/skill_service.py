@@ -193,11 +193,13 @@ class SkillService:
             # Copy skill directory to skills folder
             shutil.copytree(skill_dir, target_dir)
             
-            # List resource files
+            # List resource files recursively (include subdirectories)
             resources = []
-            for file_path in target_dir.iterdir():
-                if file_path.is_file() and file_path.name != "SKILL.md":
-                    resources.append(file_path.name)
+            for item in target_dir.rglob("*"):
+                if item.is_file() and item.name != "SKILL.md":
+                    # Store relative path from target_dir
+                    rel_path = item.relative_to(target_dir)
+                    resources.append(str(rel_path))
             
             # Create or update database record
             existing = self.get_skill(skill_name)
@@ -281,8 +283,8 @@ class SkillService:
         """Get skill names that a user has permission to use.
         
         Permission logic:
-        - User must have role permission (RoleSkillPermission.can_use)
-        - AND department permission (DepartmentSkillPermission.is_allowed)
+        - User must have at least one role with permission (RoleSkillPermission.can_use)
+        - AND department permission (DepartmentSkillPermission.is_allowed) if exists
         - If no department permission exists, allow by default
         
         Args:
@@ -291,23 +293,28 @@ class SkillService:
         Returns:
             List of allowed skill names.
         """
-        # Get user with role and department
+        # Get user with roles and department
         user = self.db.query(User).filter(User.id == user_id).first()
         if not user:
             return []
         
-        role_id = user.role_id
+        # Get all role IDs for this user (many-to-many relationship)
+        role_ids = [role.id for role in user.roles] if user.roles else []
         department_id = user.department_id
+        
+        # If user has no roles, return empty list
+        if not role_ids:
+            return []
         
         # Get all active skills
         all_skills = self.db.query(Skill).filter(Skill.is_active == True).all()
         
         allowed = []
         for skill in all_skills:
-            # Check role permission
+            # Check role permission - any of user's roles having can_use=True
             role_perm = self.db.query(RoleSkillPermission).filter(
                 and_(
-                    RoleSkillPermission.role_id == role_id,
+                    RoleSkillPermission.role_id.in_(role_ids),
                     RoleSkillPermission.skill_id == skill.id,
                     RoleSkillPermission.can_use == True,
                 )

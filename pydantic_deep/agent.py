@@ -14,7 +14,6 @@ from pydantic_ai.tools import Tool
 from pydantic_deep.backends.protocol import BackendProtocol, SandboxProtocol
 from pydantic_deep.backends.state import StateBackend
 from pydantic_deep.backends.sandbox import DockerSandbox
-from pydantic_deep.sandbox_config import build_sandbox_volumes
 from pydantic_deep.deps import DeepAgentDeps
 from pydantic_deep.toolsets.filesystem import (
     create_filesystem_toolset,

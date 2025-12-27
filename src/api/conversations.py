@@ -247,6 +247,8 @@ async def chat_stream(
 
     # Streaming generator
     async def event_generator():
+        collected_response = []  # Collect response text for title generation
+        
         try:
             async for chunk in service.chat_stream(
                 conversation_id=conversation_id,
@@ -255,6 +257,10 @@ async def chat_stream(
                 deps=deps,
                 agent=agent
             ):
+                # Collect text responses for title generation
+                if chunk.get("type") == "text":
+                    collected_response.append(chunk.get("content", ""))
+                
                 # SSE format: data: <json_content>\n\n
                 # Chunk is now a dict (text, tool_call, tool_result)
                 yield f"data: {json.dumps(chunk, default=str)}\n\n"
@@ -263,6 +269,18 @@ async def chat_stream(
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
         finally:
+            # Async title generation (non-blocking)
+            conv = await service.get_conversation(conversation_id, user_id)
+            if conv and service.should_generate_title(conv) and collected_response:
+                import asyncio
+                asyncio.create_task(
+                    service.generate_title_async(
+                        conversation_id=conversation_id,
+                        user_message=body.message,
+                        assistant_response="".join(collected_response)
+                    )
+                )
+            
             # Stop container after response completes to avoid resource waste
             if sandbox._container is not None:
                 print(f"🛑 Stopping container for conversation {conversation_id}")

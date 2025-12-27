@@ -290,7 +290,7 @@ def get_user_permitted_skills(
             print(f"User can use skill: {skill.name}")
         ```
     """
-    from src.models.tools_skills import Skill, RoleSkillPermission
+    from src.models.tools_skills import Skill, RoleSkillPermission, DepartmentSkillPermission
     from src.models.user_management import User
     
     # Get user
@@ -298,14 +298,28 @@ def get_user_permitted_skills(
     if not user:
         return []
     
+    # Get role IDs (many-to-many relationship)
+    role_ids = [role.id for role in user.roles] if user.roles else []
+    if not role_ids:
+        return []
+    
     # Query skills via role permissions
     permitted_skills = db_session.query(Skill).join(
         RoleSkillPermission,
         RoleSkillPermission.skill_id == Skill.id
     ).filter(
-        RoleSkillPermission.role_id == user.role_id,
+        RoleSkillPermission.role_id.in_(role_ids),
         RoleSkillPermission.can_use == True,
         Skill.is_active == True
     ).all()
+    
+    # Filter by department restrictions if user has department
+    if user.department_id:
+        dept_restrictions = db_session.query(DepartmentSkillPermission).filter(
+            DepartmentSkillPermission.department_id == user.department_id,
+            DepartmentSkillPermission.is_allowed == False
+        ).all()
+        blocked_skill_ids = {r.skill_id for r in dept_restrictions}
+        permitted_skills = [s for s in permitted_skills if s.id not in blocked_skill_ids]
     
     return permitted_skills

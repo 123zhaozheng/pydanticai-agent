@@ -513,3 +513,88 @@ class ConversationService:
         self.session.commit()
         
         return todos
+
+    async def generate_title_async(
+        self,
+        conversation_id: int,
+        user_message: str,
+        assistant_response: str,
+        model: Any = None,  # PydanticAI model or None for default
+    ) -> str | None:
+        """
+        异步生成会话标题。
+        
+        在第一轮对话完成后调用,用小模型生成简洁标题。
+        
+        Args:
+            conversation_id: 会话 ID
+            user_message: 用户的第一条消息
+            assistant_response: 助手的第一条回复
+            model: 用于生成标题的模型 (默认使用数据库默认模型)
+            
+        Returns:
+            生成的标题,或 None 如果失败
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        try:
+            # 截断长内容
+            user_msg = user_message[:200] if len(user_message) > 200 else user_message
+            assistant_msg = assistant_response[:300] if len(assistant_response) > 300 else assistant_response
+            
+            # 构建提示
+            prompt = f"""请根据以下对话内容生成一个简洁的中文标题,要求:
+- 不超过15个字
+- 直接输出标题,不要任何解释
+- 概括对话的主要目的
+
+用户: {user_msg}
+助手: {assistant_msg}
+
+标题:"""
+            
+            # 获取模型: 传入的模型 > 数据库默认模型 > 硬编码后备
+            if model is None:
+                try:
+                    from src.services.model_manager import model_manager
+                    model = model_manager.get_default_model(self.session)
+                    logger.info(f"[TitleGen] Using default model from database")
+                except Exception as e:
+                    logger.warning(f"[TitleGen] Failed to get default model, using fallback: {e}")
+                    from pydantic_ai.models.openai import OpenAIModel
+                    model = OpenAIModel("gpt-4o-mini")
+            
+            from pydantic_ai import Agent
+            title_agent = Agent(
+                model=model,
+                system_prompt="你是一个标题生成助手,只输出简短的中文标题。"
+            )
+            result = await title_agent.run(prompt)
+            title = result.output.strip()
+            
+            # 清理标题 (移除引号等)
+            title = title.strip('"\'')
+            if len(title) > 50:
+                title = title[:47] + "..."
+            
+            # 更新数据库
+            self.session.query(Conversation).filter(
+                Conversation.id == conversation_id
+            ).update({"title": title})
+            self.session.commit()
+            
+            logger.info(f"[TitleGen] Generated title for conv {conversation_id}: {title}")
+            return title
+            
+        except Exception as e:
+            logger.warning(f"[TitleGen] Failed to generate title for conv {conversation_id}: {e}")
+            return None
+    
+    def should_generate_title(self, conversation: Conversation) -> bool:
+        """检查是否需要生成标题"""
+        if conversation.title is None:
+            return True
+        if conversation.title.strip() in ("", "新会话", "New Chat", "Untitled"):
+            return True
+        return False
