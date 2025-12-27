@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logfire
 from typing import TYPE_CHECKING
 
 from pydantic_ai import RunContext, ToolDefinition
 
 if TYPE_CHECKING:
     from pydantic_deep.deps import DeepAgentDeps
+
+logger = logfire
 
 
 _BUILTIN_TOOL_PREFIXES: tuple[str, ...] = (
@@ -111,7 +114,7 @@ async def get_user_tool_permissions(
         
     except Exception as e:
         # Database error, log and return empty set
-        print(f"Error fetching tool permissions: {e}")
+        logger.error("Error fetching tool permissions", error=str(e), user_id=user_id)
         return set()
     finally:
         if 'session' in locals():
@@ -200,7 +203,7 @@ async def get_user_skill_permissions(
         return skill_names
         
     except Exception as e:
-        print(f"Error fetching skill permissions: {e}")
+        logger.error("Error fetching skill permissions", error=str(e), user_id=user_id)
         return set()
     finally:
         if 'session' in locals():
@@ -245,9 +248,7 @@ async def filter_tools_by_permission(
         if name.startswith(builtin_prefixes) or name in permitted_mcp_tools:
             append(tool_def)
     
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.info(f"[ToolFilter] User {user_id}: {len(filtered)}/{len(tool_defs)} tools allowed")
+    logger.info("Tool filter applied", user_id=user_id, allowed=len(filtered), total=len(tool_defs))
     
     return filtered
 
@@ -287,7 +288,7 @@ def get_user_permitted_skills(
         db = next(get_db())
         skills = get_user_permitted_skills(user_id=1, db_session=db)
         for skill in skills:
-            print(f"User can use skill: {skill.name}")
+            logger.info("User can use skill", skill_name=skill.name)
         ```
     """
     from src.models.tools_skills import Skill, RoleSkillPermission, DepartmentSkillPermission

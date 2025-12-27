@@ -111,8 +111,8 @@ class MCPServerService:
             invalidate_config_cache()  # Force cache refresh
             reload_mcp_toolset()
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning(f"Failed to reload MCP toolset: {e}")
+            import logfire
+            logfire.warn("Failed to reload MCP toolset", error=str(e))
 
         return server
     

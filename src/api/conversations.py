@@ -1,5 +1,7 @@
 """API endpoints for Conversations management."""
 
+import logfire
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -8,6 +10,8 @@ from typing import Literal
 
 from src.database import get_db
 from src.services.conversation_service import ConversationService
+
+logger = logfire
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
@@ -193,13 +197,13 @@ async def chat_stream(
     # Reuse or create sandbox for this conversation
     if conversation_id in _sandbox_manager:
         sandbox = _sandbox_manager[conversation_id]
-        print(f"♻️  Reusing sandbox for conversation {conversation_id}")
+        logger.debug("Reusing sandbox", conversation_id=conversation_id)
     else:
         # Get allowed skill names for permission filtering
         from src.services.skill_service import SkillService
         skill_service = SkillService(db)
         allowed_skill_names = skill_service.get_allowed_skill_names(user_id)
-        print(f"🔑 User {user_id} has access to {len(allowed_skill_names)} skills: {allowed_skill_names}")
+        logger.info("User skill access", user_id=user_id, skill_count=len(allowed_skill_names), skills=allowed_skill_names)
         
         # Create sandbox with automatic volume mounting, image config, and skill filtering
         sandbox = DockerSandbox(
@@ -211,11 +215,11 @@ async def chat_stream(
             allowed_skill_names=allowed_skill_names,  # 只挂载有权限的技能目录
         )
         _sandbox_manager[conversation_id] = sandbox
-        print(f"🆕 Created new sandbox for conversation {conversation_id} (session_id: {user_id}:{conversation_id})")
+        logger.info("Created sandbox", conversation_id=conversation_id, session_id=f"{user_id}:{conversation_id}")
 
     # Discover files in container
     file_paths = discover_container_files(sandbox)
-    print(f"📂 Discovered {len(file_paths)} files in container")
+    logger.debug("Discovered container files", file_count=len(file_paths))
 
     # Create DeepAgentDeps with sandbox backend and file paths
     deps = DeepAgentDeps(
@@ -283,7 +287,7 @@ async def chat_stream(
             
             # Stop container after response completes to avoid resource waste
             if sandbox._container is not None:
-                print(f"🛑 Stopping container for conversation {conversation_id}")
+                logger.debug("Stopping container", conversation_id=conversation_id)
                 sandbox.stop()
 
     return StreamingResponse(

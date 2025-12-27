@@ -85,9 +85,9 @@ def load_mcp_config_from_db(force_refresh: bool = False) -> Dict[str, Any]:
         if new_hash != _config_hash:
             _config_cache = new_config
             _config_hash = new_hash
-            import logging
-            logging.getLogger(__name__).info(
-                f"📝 MCP config updated (hash: {new_hash[:8]}..., servers: {len(mcp_servers)})"
+            import logfire
+            logfire.info(
+                "MCP config updated", hash=new_hash[:8], server_count=len(mcp_servers)
             )
 
         return _config_cache
@@ -104,5 +104,5 @@ def invalidate_config_cache():
     global _config_cache, _config_hash
     _config_cache = {}
     _config_hash = None
-    import logging
-    logging.getLogger(__name__).debug("🔄 MCP config cache invalidated")
+    import logfire
+    logfire.debug("MCP config cache invalidated")

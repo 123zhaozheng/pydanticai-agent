@@ -535,8 +535,7 @@ class ConversationService:
         Returns:
             生成的标题,或 None 如果失败
         """
-        import logging
-        logger = logging.getLogger(__name__)
+        import logfire
         
         try:
             # 截断长内容
@@ -559,9 +558,9 @@ class ConversationService:
                 try:
                     from src.services.model_manager import model_manager
                     model = model_manager.get_default_model(self.session)
-                    logger.info(f"[TitleGen] Using default model from database")
+                    logfire.info("TitleGen using default model from database")
                 except Exception as e:
-                    logger.warning(f"[TitleGen] Failed to get default model, using fallback: {e}")
+                    logfire.warn("TitleGen failed to get default model, using fallback", error=str(e))
                     from pydantic_ai.models.openai import OpenAIModel
                     model = OpenAIModel("gpt-4o-mini")
             
@@ -584,11 +583,11 @@ class ConversationService:
             ).update({"title": title})
             self.session.commit()
             
-            logger.info(f"[TitleGen] Generated title for conv {conversation_id}: {title}")
+            logfire.info("TitleGen generated title", conversation_id=conversation_id, title=title)
             return title
             
         except Exception as e:
-            logger.warning(f"[TitleGen] Failed to generate title for conv {conversation_id}: {e}")
+            logfire.warn("TitleGen failed", conversation_id=conversation_id, error=str(e))
             return None
     
     def should_generate_title(self, conversation: Conversation) -> bool:

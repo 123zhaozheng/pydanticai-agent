@@ -1,8 +1,8 @@
 """Main agent factory for pydantic-deep."""
 
 from __future__ import annotations
-import logging
 
+import logfire
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
@@ -296,11 +296,11 @@ def create_deep_agent(  # noqa: C901
             mcp_toolset = create_mcp_toolset()
             if mcp_toolset:
                 all_toolsets.append(mcp_toolset)
-                print(f"✅ Created MCP toolset for this agent")
+                logfire.info("Created MCP toolset for this agent")
             else:
-                print("ℹ️  No MCP servers configured")
+                logfire.info("No MCP servers configured")
         except Exception as e:
-            print(f"❌ Failed to create MCP toolset: {e}")
+            logfire.error("Failed to create MCP toolset", error=str(e))
     
     # Update toolsets in kwargs
     agent_create_kwargs["toolsets"] = all_toolsets
@@ -320,9 +320,8 @@ def create_deep_agent(  # noqa: C901
     agent_create_kwargs.update(agent_kwargs)
 
     # Log toolsets for debugging
-    logger = logging.getLogger(__name__)
     toolset_names = [t.id if hasattr(t, 'id') else str(type(t).__name__) for t in all_toolsets]
-    logger.info(f"[DeepAgent] Creating agent with {len(all_toolsets)} toolsets: {toolset_names}")
+    logfire.info("Creating agent", toolset_count=len(all_toolsets), toolsets=toolset_names)
 
     # Create the agent (deps will be passed at runtime via agent.run())
     agent: Agent[DeepAgentDeps, Any] = Agent(
@@ -370,7 +369,7 @@ def create_deep_agent(  # noqa: C901
                     )
                 except Exception as e:
                     # Permission check failed, fall back to showing all (backward compatible)
-                    print(f"Skill permission filtering in system prompt failed: {e}")
+                    logfire.warn("Skill permission filtering in system prompt failed", error=str(e))
             
             skills_prompt = get_skills_system_prompt(ctx.deps, filtered_skills)
             if skills_prompt:

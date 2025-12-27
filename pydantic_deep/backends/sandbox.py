@@ -18,6 +18,8 @@ from pydantic_deep.types import (
     WriteResult,
 )
 
+import logfire
+
 if TYPE_CHECKING:
     pass
 
@@ -393,11 +395,9 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
             volumes[str(skills_dir)] = {"bind": "/workspace/skills", "mode": "ro"}
 
         # Debug: Log volumes configuration
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"[DockerSandbox] Built volumes: {list(volumes.keys())}")
+        logfire.info("DockerSandbox built volumes", volume_count=len(volumes), volumes=list(volumes.keys()))
         for host_path, mount in volumes.items():
-            logger.info(f"  {host_path} -> {mount['bind']} ({mount['mode']})")
+            logfire.debug("Volume mount", host_path=str(host_path), bind=mount['bind'], mode=mount['mode'])
 
         return volumes
 
@@ -421,10 +421,8 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
         client = docker.from_env()
 
         # Debug: Log volumes being passed to Docker
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"[DockerSandbox] Creating container with image: {self._image}")
-        logger.info(f"[DockerSandbox] Volumes passed to Docker: {self._volumes}")
+        logfire.info("DockerSandbox creating container", image=self._image)
+        logfire.debug("Docker volumes", volumes=self._volumes)
 
         self._container = client.containers.run(
             self._image,

@@ -312,7 +312,8 @@ def create_skills_toolset(  # noqa: C901
 
             except Exception as e:
                 # Skip invalid skills
-                print(f"Error reading skill at {skill_md_path}: {e}")
+                import logfire
+                logfire.warn("Error reading skill", skill_path=str(skill_md_path), error=str(e))
                 continue
 
         if len(lines) == 2:  # Only header, no skills parsed

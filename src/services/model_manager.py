@@ -1,6 +1,7 @@
 """Model Manager for dynamic LLM model configuration and instantiation."""
 
 import os
+import logfire
 from typing import Any, Dict, Optional
 from sqlalchemy.orm import Session
 
@@ -44,14 +45,11 @@ class ModelManager:
         Raises:
             ValueError: If model config not found or inactive
         """
-        import logging
-        logger = logging.getLogger(__name__)
-        
-        logger.info(f"[ModelManager] Looking for model: {model_name}")
+        logfire.debug("ModelManager looking for model", model_name=model_name)
         
         # Check cache
         if model_name in self._model_cache:
-            logger.info(f"[ModelManager] Found in cache: {model_name}")
+            logfire.debug("Model found in cache", model_name=model_name)
             return self._model_cache[model_name]
         
         # Load from database - try config name first, then model_name
@@ -60,7 +58,7 @@ class ModelManager:
             LLMModelConfig.is_active == True
         ).first()
         
-        logger.info(f"[ModelManager] Query by name '{model_name}': {'found' if config else 'not found'}")
+        logfire.debug("Model query by name", model_name=model_name, found=bool(config))
         
         # If not found by config name, try by model_name
         if not config:
@@ -68,14 +66,14 @@ class ModelManager:
                 LLMModelConfig.model_name == model_name,
                 LLMModelConfig.is_active == True
             ).first()
-            logger.info(f"[ModelManager] Query by model_name '{model_name}': {'found' if config else 'not found'}")
+            logfire.debug("Model query by model_name", model_name=model_name, found=bool(config))
         
         if not config:
             raise ValueError(f"Model config '{model_name}' not found or inactive")
         
         # Log config details (mask API key)
         api_key_preview = config.api_key[:8] + "..." if config.api_key else "None"
-        logger.info(f"[ModelManager] Found config: name={config.name}, provider={config.provider_type}, model={config.model_name}, base_url={config.base_url}, api_key={api_key_preview}")
+        logfire.info("Model config found", name=config.name, provider=config.provider_type, model=config.model_name, base_url=config.base_url, api_key=api_key_preview)
         
         # Create instance
         model = self._create_model_instance(config)

@@ -1,5 +1,5 @@
 from typing import Optional
-import logging
+import logfire
 
 try:
     from pydantic_ai.toolsets.fastmcp import FastMCPToolset
@@ -7,8 +7,6 @@ try:
 except ImportError:
     FastMCPToolset = None
     load_mcp_config_from_db = None
-
-logger = logging.getLogger(__name__)
 
 
 def create_mcp_toolset() -> Optional["FastMCPToolset"]:
@@ -21,20 +19,20 @@ def create_mcp_toolset() -> Optional["FastMCPToolset"]:
         New FastMCPToolset instance or None if no MCP servers configured.
     """
     if FastMCPToolset is None:
-        logger.warning("⚠️  FastMCPToolset not available")
+        logfire.warn("FastMCPToolset not available")
         return None
 
     try:
         mcp_config = load_mcp_config_from_db()
         if mcp_config and mcp_config.get('mcpServers'):
             toolset = FastMCPToolset(mcp_config, id="deep-mcp")
-            logger.info(f"✅ Created MCP toolset with {len(mcp_config['mcpServers'])} servers")
+            logfire.info("Created MCP toolset", server_count=len(mcp_config['mcpServers']))
             return toolset
         else:
-            logger.debug("ℹ️  No active MCP servers")
+            logfire.debug("No active MCP servers")
             return None
     except Exception as e:
-        logger.error(f"❌ Failed to create MCP toolset: {e}")
+        logfire.error("Failed to create MCP toolset", error=str(e))
         return None
 
 
@@ -55,5 +53,6 @@ def reload_mcp_toolset():
     """
     from pydantic_deep.mcp_config import invalidate_config_cache
     invalidate_config_cache()
-    logger.info("🔄 MCP config cache invalidated, next request will use fresh config")
+    logfire.info("MCP config cache invalidated, next request will use fresh config")
+
 
