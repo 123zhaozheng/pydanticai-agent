@@ -270,8 +270,11 @@ def create_skills_toolset(  # noqa: C901
 
         for skill_md_path in sorted(skill_paths):
             try:
-                # Read SKILL.md file from container
-                content = backend.read(skill_md_path)
+                # Read SKILL.md file from container (use cat directly, not backend.read() which adds line numbers)
+                read_result = backend.execute(f"cat {skill_md_path}")
+                if read_result.exit_code != 0:
+                    continue
+                content = read_result.output
 
                 if "Error:" in content:
                     continue

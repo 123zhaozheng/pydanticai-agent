@@ -388,6 +388,13 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
             skills_dir.mkdir(parents=True, exist_ok=True)
             volumes[str(skills_dir)] = {"bind": "/workspace/skills", "mode": "ro"}
 
+        # Debug: Log volumes configuration
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[DockerSandbox] Built volumes: {list(volumes.keys())}")
+        for host_path, mount in volumes.items():
+            logger.info(f"  {host_path} -> {mount['bind']} ({mount['mode']})")
+
         return volumes
 
     @property
@@ -421,6 +428,12 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
         env_vars = {}
         if self._runtime and self._runtime.env_vars:
             env_vars = self._runtime.env_vars
+
+        # Debug: Log volumes being passed to Docker
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[DockerSandbox] Creating container with image: {image}")
+        logger.info(f"[DockerSandbox] Volumes passed to Docker: {self._volumes}")
 
         self._container = client.containers.run(
             image,
