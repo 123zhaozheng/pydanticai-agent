@@ -50,14 +50,8 @@ def get_upload_directory(user_id: int, conversation_id: int) -> Path:
     """
     base_dir = os.getenv("PYDANTIC_DEEP_BASE_DIR")
     if base_dir is None:
-        # OS-specific defaults
-        import platform
-
-        system = platform.system()
-        if system == "Windows":
-            base_dir = "D:/pydantic-deep-data"
-        else:
-            base_dir = "/var/pydantic-deep"
+        # Default to project root directory
+        base_dir = str(Path(__file__).resolve().parent.parent.parent)
 
     upload_dir = Path(base_dir) / "uploads" / str(user_id) / str(conversation_id)
     return upload_dir

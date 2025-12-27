@@ -235,11 +235,10 @@ class ConversationService:
             self.session.add(assistant_msg)
             self.session.commit()
         
-        # 5. Save State (Todos etc)
+        # 5. Save State (Todos)
         # Because we passed `deps` to the agent, it was mutated in place.
         state = {
             "todos": [t.model_dump() for t in deps.todos] if deps.todos else [],
-            "uploads": conv.state.get("uploads", {}) if conv.state else {}
         }
         self.session.query(Conversation).filter(
             Conversation.id == conversation_id
@@ -257,7 +256,7 @@ class ConversationService:
         """Create a new conversation for a user."""
         conv = Conversation(user_id=user_id, title=title)
         # Initialize default state
-        conv.state = {"todos": [], "uploads": {}}
+        conv.state = {"todos": []}
         
         self.session.add(conv)
         self.session.commit()

@@ -35,17 +35,6 @@ from src.models.user_management import (  # noqa: E402
 )
 
 
-class UploadedFileModel(Base):
-    __tablename__ = "uploaded_files"
-
-    id = Column(String, primary_key=True, default=lambda: str(uuid4()))
-    filename = Column(String, nullable=False)
-    file_path = Column(String, nullable=False)
-    content_type = Column(String)
-    size = Column(Integer)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-
 def init_db():
     Base.metadata.create_all(bind=engine)
 
