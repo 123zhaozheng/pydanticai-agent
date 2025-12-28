@@ -121,7 +121,8 @@ class SkillService:
         
         if user_id:
             # Get allowed skill names for user
-            allowed_names = self.get_allowed_skill_names(user_id)
+            # Pass include_inactive to ensure we check permissions for inactive skills if requested
+            allowed_names = self.get_allowed_skill_names(user_id, include_inactive=include_inactive)
             query = query.filter(Skill.name.in_(allowed_names))
         
         return query.order_by(Skill.name).all()
@@ -277,7 +278,7 @@ class SkillService:
     
     # ===== Permission Methods =====
     
-    def get_allowed_skill_names(self, user_id: int) -> list[str]:
+    def get_allowed_skill_names(self, user_id: int, include_inactive: bool = False) -> list[str]:
         """Get skill names that a user has permission to use.
         
         Permission logic:
@@ -287,6 +288,7 @@ class SkillService:
         
         Args:
             user_id: User ID.
+            include_inactive: Whether to include inactive skills in the check.
             
         Returns:
             List of allowed skill names.
@@ -304,8 +306,11 @@ class SkillService:
         if not role_ids:
             return []
         
-        # Get all active skills
-        all_skills = self.db.query(Skill).filter(Skill.is_active == True).all()
+        # Get skills based on include_inactive flag
+        query = self.db.query(Skill)
+        if not include_inactive:
+            query = query.filter(Skill.is_active == True)
+        all_skills = query.all()
         
         allowed = []
         for skill in all_skills:

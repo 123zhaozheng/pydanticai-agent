@@ -2,7 +2,7 @@
 
 import logfire
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -10,6 +10,7 @@ from typing import Literal
 
 from src.database import get_db
 from src.services.conversation_service import ConversationService
+from pydantic_deep.backends.sandbox import DockerSandbox
 
 logger = logfire
 
@@ -160,6 +161,7 @@ class ChatRequest(BaseModel):
 async def chat_stream(
     conversation_id: int,
     body: ChatRequest,
+    background_tasks: BackgroundTasks,
     user_id: int = 1,  # TODO: Get from JWT token
     db: Session = Depends(get_db)
 ):
@@ -167,20 +169,11 @@ async def chat_stream(
     Stream chat with the agent.
     
     **Returns:** Server-Sent Events (SSE) stream of text chunks.
-    
-    **Usage:**
-    ```javascript
-    const eventSource = new EventSource('/api/conversations/1/chat');
-    eventSource.onmessage = (event) => {
-        console.log(event.data);  // Text chunk
-    };
-    ```
     """
     from fastapi.responses import StreamingResponse
     from pydantic_deep import create_deep_agent, discover_container_files, get_default_sandbox_config
     from pydantic_deep.deps import DeepAgentDeps
     from pydantic_deep.backends.sandbox import DockerSandbox
-    # from pydantic_deep.processors.cleanup import deduplicate_stateful_tools_processor
     from src.services.model_manager import model_manager
 
     service = ConversationService(db)
@@ -230,9 +223,6 @@ async def chat_stream(
     )
 
     # Create Agent (history cleanup disabled to prevent infinite loops)
-    # Determine MCP tools and skills selection:
-    # - "auto" -> None (include all permitted)
-    # - list[str] -> pass the list for filtering (will be intersected with permissions)
     mcp_tool_filter = None if body.mcp_tools == "auto" else body.mcp_tools
     skill_filter = None if body.skills == "auto" else body.skills
     
@@ -244,15 +234,32 @@ async def chat_stream(
         enable_mcp_tools=True,
         mcp_tool_names=mcp_tool_filter,  # Frontend-selected MCP tools
         skill_names=skill_filter,  # Frontend-selected skills
-        # history_processors=[deduplicate_stateful_tools_processor]  # Disabled: causes infinite tool call loops
     )
 
     import json
 
+    # --- Title Generation Setup ---
+    # Retrieve conversation to check if title generation is needed
+    # We check synchronously here because it's fast and determines if we need the overhead
+    conv = await service.get_conversation(conversation_id, user_id)
+    
+    # Shared buffer to pass generated text to background task
+    # Using a list as a mutable container
+    shared_buffer = [] if (conv and service.should_generate_title(conv)) else None
+    
+    if shared_buffer is not None:
+        # Add background task
+        # IMPORTANT: We must NOT pass the 'db' session to background task as it will be closed
+        background_tasks.add_task(
+            background_generate_title,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            user_message=body.message,
+            shared_buffer=shared_buffer
+        )
+
     # Streaming generator
     async def event_generator():
-        collected_response = []  # Collect response text for title generation
-        
         try:
             async for chunk in service.chat_stream(
                 conversation_id=conversation_id,
@@ -261,34 +268,29 @@ async def chat_stream(
                 deps=deps,
                 agent=agent
             ):
-                # Collect text responses for title generation
-                if chunk.get("type") == "text":
-                    collected_response.append(chunk.get("content", ""))
+                # Collect text responses for title generation if enabled
+                if shared_buffer is not None and chunk.get("type") == "text":
+                    content = chunk.get("content", "")
+                    if content:
+                        shared_buffer.append(content)
                 
                 # SSE format: data: <json_content>\n\n
-                # Chunk is now a dict (text, tool_call, tool_result)
                 yield f"data: {json.dumps(chunk, default=str)}\n\n"
         except ValueError as e:
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
-        finally:
-            # Async title generation (non-blocking)
-            conv = await service.get_conversation(conversation_id, user_id)
-            if conv and service.should_generate_title(conv) and collected_response:
-                import asyncio
-                asyncio.create_task(
-                    service.generate_title_async(
-                        conversation_id=conversation_id,
-                        user_message=body.message,
-                        assistant_response="".join(collected_response)
-                    )
-                )
-            
-            # Stop container after response completes to avoid resource waste
-            if sandbox._container is not None:
-                logger.debug("Stopping container", conversation_id=conversation_id)
-                sandbox.stop()
+        
+        # NOTE: sandbox.stop() is handled by BackgroundTasks to avoid blocking the response completion
+
+    # Add sandbox cleanup to background tasks
+    # This ensures the container is stopped AFTER the response is fully sent to the client
+    # resolving the "hanging connection" issue.
+    background_tasks.add_task(
+        background_stop_sandbox,
+        sandbox=sandbox,
+        conversation_id=conversation_id
+    )
 
     return StreamingResponse(
         event_generator(),
@@ -298,3 +300,51 @@ async def chat_stream(
             "Connection": "keep-alive",
         }
     )
+
+
+async def background_generate_title(
+    conversation_id: int, 
+    user_id: int,
+    user_message: str, 
+    shared_buffer: list[str]
+):
+    """
+    Background task to generate conversation title.
+    
+    It uses a shared buffer to get the full assistant response which was collected 
+    during the streaming process.
+    """
+    if not shared_buffer:
+        return
+
+    assistant_response = "".join(shared_buffer)
+    if not assistant_response.strip():
+        return
+
+    # Create a NEW database session for the background task
+    # We cannot reuse the dependency session as it's scoped to the request
+    from src.database import SessionLocal
+    
+    logger.info("Starting background title generation", conversation_id=conversation_id)
+    
+    with SessionLocal() as db:
+        service = ConversationService(db)
+        # Double check if title is still needed (race condition check)
+        conv = await service.get_conversation(conversation_id, user_id)
+        if conv and service.should_generate_title(conv):
+            await service.generate_title_async(
+                conversation_id=conversation_id,
+                user_message=user_message,
+                assistant_response=assistant_response
+            )
+
+
+def background_stop_sandbox(sandbox: "DockerSandbox", conversation_id: int):
+    """
+    Background task to stop the sandbox container.
+    This runs after the response is sent, so strict termination speed is less critical,
+    but we should still log it.
+    """
+    if sandbox._container is not None:
+        logger.debug("Stopping container in background", conversation_id=conversation_id)
+        sandbox.stop()
