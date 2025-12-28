@@ -93,11 +93,9 @@ class SkillService:
         if skills_base_dir:
             self.skills_dir = Path(skills_base_dir)
         else:
-            # Default to project root / skills
-            self.skills_dir = Path(os.environ.get(
-                "PYDANTIC_DEEP_BASE_DIR", 
-                Path(__file__).parent.parent.parent
-            )) / "skills"
+            # Default to project settings
+            from src.config import settings
+            self.skills_dir = settings.SKILLS_DIR
         
         # Ensure skills directory exists
         self.skills_dir.mkdir(parents=True, exist_ok=True)

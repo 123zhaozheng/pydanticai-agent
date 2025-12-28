@@ -24,6 +24,7 @@ from src.api.mcp_tools import router as mcp_tools_router
 from src.api.todos import router as todos_router
 from src.api.uploads import router as uploads_router
 from src.api.skills import router as skills_router
+from src.api.artifacts import router as artifacts_router
 from pydantic_deep.toolsets.mcp import reload_mcp_toolset
 
 
@@ -54,6 +55,7 @@ app.include_router(mcp_tools_router)
 app.include_router(todos_router)
 app.include_router(uploads_router)
 app.include_router(skills_router)
+app.include_router(artifacts_router)
 
 
 @app.get("/")

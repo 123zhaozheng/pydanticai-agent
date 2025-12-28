@@ -1,0 +1,50 @@
+services:
+  # Main Application Service
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pydantic-deep-app
+    ports:
+      - "8000:8000"
+    volumes:
+      # Data Persistence
+      - ./pydanticui-data:/app/data
+      - ./app.db:/app/app.db
+      - ./uploads:/app/uploads
+      - ./intermediate:/app/intermediate
+      - ./skills:/app/skills
+
+      # Source Code Mapping (For hot-reloading/development)
+      - ./src:/app/src
+      - ./pydantic_deep:/app/pydantic_deep
+
+      # Docker Socket Mount (Critical for Sandbox)
+      # This allows the app container to spawn sibling containers (DinD/DooD)
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      # Override base dir to match container path
+      - PYDANTIC_DEEP_BASE_DIR=/app
+      # [IMPORTANT] Host directory for DooD volume mounting. 
+      # REPLACE THIS with your actual project path on Windows (e.g. D:/code/py/pydanticai-agent)
+      - PYDANTIC_DEEP_HOST_DIR=D:/code/py/pydanticai-agent
+      # Optional: Database URL if using SQLite in a volume
+      # - DATABASE_URL=sqlite:////app/data/app.db
+    restart: unless-stopped
+    depends_on:
+      setup-sandbox:
+        condition: service_completed_successfully
+
+  # Helper service to build/ensure the sandbox image exists
+  setup-sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+    image: pydantic-deep-sandbox
+    container_name: pydantic-deep-sandbox-builder
+    # We just need to build the image, so we run a dummy command and exit
+    command: [ "true" ]
+    # This service shares the docker socket so the build is registered on the host
+    # Actually, 'image' directive with 'build' will built it to the host daemon 
+    # if we run 'docker-compose up --build'. 
+    # This setup ensures 'docker-compose up' attempts to build it.

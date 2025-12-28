@@ -38,6 +38,8 @@ class FileListItem(BaseModel):
 # ===== Helper Functions =====
 
 
+from src.config import settings
+
 def get_upload_directory(user_id: int, conversation_id: int) -> Path:
     """Get upload directory path for a user's conversation.
 
@@ -48,12 +50,7 @@ def get_upload_directory(user_id: int, conversation_id: int) -> Path:
     Returns:
         Path object for the upload directory.
     """
-    base_dir = os.getenv("PYDANTIC_DEEP_BASE_DIR")
-    if base_dir is None:
-        # Default to project root directory
-        base_dir = str(Path(__file__).resolve().parent.parent.parent)
-
-    upload_dir = Path(base_dir) / "uploads" / str(user_id) / str(conversation_id)
+    upload_dir = settings.UPLOAD_DIR / str(user_id) / str(conversation_id)
     return upload_dir
 
 

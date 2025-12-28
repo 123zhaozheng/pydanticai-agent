@@ -39,3 +39,7 @@ python-dotenv>=1.0.0
 
 # ===== Redis (可选 - 用于缓存) =====
 # redis>=5.0.0
+# ===== Docker SDK =====
+docker>=7.0.0
+# ===== Observability =====
+logfire[fastapi]>=0.1.0

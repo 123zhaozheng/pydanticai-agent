@@ -344,20 +344,15 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
         Returns:
             Volume mounts dict for Docker.
         """
-        import os
         import platform
         from pathlib import Path
+        
+        from src.config import settings
 
         # Determine base directory
         if base_dir is None:
-            base_dir = os.getenv("PYDANTIC_DEEP_BASE_DIR")
-            if base_dir is None:
-                # OS-specific defaults
-                system = platform.system()
-                if system == "Windows":
-                    base_dir = "C:/code/python/pydantic-deepagents"
-                else:
-                    base_dir = "/var/pydantic-deep"
+            # Use HOST_DIR for Docker volume mounting (DooD support)
+            base_dir = str(settings.HOST_DIR)
 
         volumes = {}
 
@@ -367,15 +362,32 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
             volumes[upload_path] = {"bind": "/workspace/uploads", "mode": "rw"}
         else:
             # Use default path: base_dir/uploads/{user_id}/{conversation_id}
+            # Note: base_dir here is expected to be the HOST path
             upload_dir = Path(base_dir) / "uploads" / str(user_id) / str(conversation_id)
-            upload_dir.mkdir(parents=True, exist_ok=True)
-            volumes[str(upload_dir)] = {"bind": "/workspace/uploads", "mode": "rw"}
+            # Create directory locally (using internal path) if we are inside container?
+            # PROBLEM: We can't create host directories from inside if paths don't match.
+            # But in our setup, we map internal /app to host project dir.
+            # So creating /app/uploads/1/55 internally WILL create it on host if volume is mapped.
+            # BUT: We are calculating the key for `volumes` dict, which must be HOST path.
+            
+            # We need TWO paths:
+            # 1. Internal path (to ensure it exists)
+            # 2. Host path (to bind to sandbox)
+            
+            # For creation, use settings.BASE_DIR (Internal)
+            internal_upload_dir = settings.BASE_DIR / "uploads" / str(user_id) / str(conversation_id)
+            internal_upload_dir.mkdir(parents=True, exist_ok=True)
+            
+            # For binding, use provided base_dir (Host)
+            host_upload_dir = Path(base_dir) / "uploads" / str(user_id) / str(conversation_id)
+            volumes[str(host_upload_dir)] = {"bind": "/workspace/uploads", "mode": "rw"}
 
         # 2. Intermediate directory (for code output, temp files)
-        intermediate_dir = Path(base_dir) / "intermediate" / str(user_id) / str(conversation_id)
-        intermediate_dir.mkdir(parents=True, exist_ok=True)
-        volumes[str(intermediate_dir)] = {"bind": "/workspace/intermediate", "mode": "rw"}
-
+        internal_intermediate_dir = settings.BASE_DIR / "intermediate" / str(user_id) / str(conversation_id)
+        internal_intermediate_dir.mkdir(parents=True, exist_ok=True)
+        
+        host_intermediate_dir = Path(base_dir) / "intermediate" / str(user_id) / str(conversation_id)
+        volumes[str(host_intermediate_dir)] = {"bind": "/workspace/intermediate", "mode": "rw"}
         # 3. Skills directory (read-only, with permission filtering)
         skills_dir = Path(base_dir) / "skills"
         skills_dir.mkdir(parents=True, exist_ok=True)

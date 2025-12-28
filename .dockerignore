@@ -1,0 +1,34 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+.venv
+venv
+env
+
+# Project Data Directories (Persisted via volumes, so don't bake into image)
+uploads/
+intermediate/
+skills/
+pydanticui-data/
+data/
+app.db
+
+# Logs and Artifacts
+*.log
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Environment files (Sensitive data)
+.env
+.env.*
+!.env.example
+
+# IDEs
+.vscode
+.idea
