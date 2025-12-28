@@ -188,16 +188,40 @@ async def chat_stream(
         raise HTTPException(status_code=400, detail=str(e))
 
     # Reuse or create sandbox for this conversation
+    # Get allowed skill names for permission filtering (needed for both new and reused sandbox)
+    from src.services.skill_service import SkillService
+    from src.config import settings
+    from pydantic_deep.toolsets.skills import discover_skills_from_directory
+    
+    skill_service = SkillService(db)
+    allowed_skill_names = skill_service.get_allowed_skill_names(user_id)
+    logger.info("User skill access", user_id=user_id, skill_count=len(allowed_skill_names), skills=allowed_skill_names)
+    
+    # Calculate effective skills (intersection of frontend selection and user permissions)
+    if body.skills == "auto":
+        effective_skill_names = allowed_skill_names
+    else:
+        # Frontend selection must be a subset of user permissions
+        effective_skill_names = [s for s in body.skills if s in allowed_skill_names]
+    
+    logger.info("Effective skills calculated",
+        user_id=user_id,
+        requested=body.skills,
+        permitted=allowed_skill_names,
+        effective=effective_skill_names
+    )
+    
+    # Discover skill metadata from skills directory (for system prompt injection)
+    loaded_skills = discover_skills_from_directory(
+        skills_dir=settings.BASE_DIR / "skills",
+        skill_names=effective_skill_names if effective_skill_names else None
+    )
+    logger.info("Loaded skills metadata", skill_count=len(loaded_skills), skills=[s["name"] for s in loaded_skills])
+    
     if conversation_id in _sandbox_manager:
         sandbox = _sandbox_manager[conversation_id]
         logger.debug("Reusing sandbox", conversation_id=conversation_id)
     else:
-        # Get allowed skill names for permission filtering
-        from src.services.skill_service import SkillService
-        skill_service = SkillService(db)
-        allowed_skill_names = skill_service.get_allowed_skill_names(user_id)
-        logger.info("User skill access", user_id=user_id, skill_count=len(allowed_skill_names), skills=allowed_skill_names)
-        
         # Create sandbox with automatic volume mounting, image config, and skill filtering
         sandbox = DockerSandbox(
             user_id=user_id,
@@ -205,7 +229,7 @@ async def chat_stream(
             upload_path=body.upload_path,  # Optional custom upload path
             session_id=f"{user_id}:{conversation_id}",  # Name container as user_id:conversation_id
             image_config=get_default_sandbox_config(),  # 注入环境能力描述到系统提示
-            allowed_skill_names=allowed_skill_names,  # 只挂载有权限的技能目录
+            allowed_skill_names=effective_skill_names,  # 只挂载有效的技能目录（交集后）
         )
         _sandbox_manager[conversation_id] = sandbox
         logger.info("Created sandbox", conversation_id=conversation_id, session_id=f"{user_id}:{conversation_id}")
@@ -224,7 +248,6 @@ async def chat_stream(
 
     # Create Agent (history cleanup disabled to prevent infinite loops)
     mcp_tool_filter = None if body.mcp_tools == "auto" else body.mcp_tools
-    skill_filter = None if body.skills == "auto" else body.skills
     
     agent = create_deep_agent(
         model=model,
@@ -233,7 +256,8 @@ async def chat_stream(
         enable_permission_filtering=False,
         enable_mcp_tools=True,
         mcp_tool_names=mcp_tool_filter,  # Frontend-selected MCP tools
-        skill_names=skill_filter,  # Frontend-selected skills
+        skill_names=effective_skill_names if effective_skill_names else None,  # Effective skills (intersection)
+        skills=loaded_skills,  # Pass skill metadata for system prompt injection
     )
 
     import json

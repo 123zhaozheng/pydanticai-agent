@@ -155,6 +155,71 @@ def discover_skills(
     return skills
 
 
+def discover_skills_from_directory(
+    skills_dir: Path | str,
+    skill_names: list[str] | None = None,
+) -> list[Skill]:
+    """从指定目录发现技能元数据。
+    
+    用于在创建 Agent 之前发现技能信息，以便注入到系统提示词中。
+    
+    Args:
+        skills_dir: 技能目录路径
+        skill_names: 要加载的技能名称列表，None 表示加载全部
+        
+    Returns:
+        技能元数据列表（包含 name, description, tags 等）
+    """
+    skills_dir = Path(skills_dir)
+    if not skills_dir.exists():
+        return []
+    
+    skills: list[Skill] = []
+    
+    for skill_folder in skills_dir.iterdir():
+        if not skill_folder.is_dir():
+            continue
+            
+        skill_file = skill_folder / "SKILL.md"
+        if not skill_file.exists():
+            continue
+            
+        try:
+            content = skill_file.read_text(encoding="utf-8")
+            frontmatter, _ = parse_skill_md(content)
+            
+            skill_name = frontmatter.get("name", skill_folder.name)
+            
+            # 如果指定了 skill_names，只加载匹配的技能
+            if skill_names is not None and skill_name not in skill_names:
+                continue
+            
+            skill: Skill = {
+                "name": skill_name,
+                "description": frontmatter.get("description", ""),
+                "path": str(skill_folder),
+                "tags": frontmatter.get("tags", []),
+                "version": frontmatter.get("version", "1.0.0"),
+                "author": frontmatter.get("author", ""),
+                "frontmatter_loaded": True,
+            }
+            
+            # 获取资源文件列表
+            resources = [
+                f.name for f in skill_folder.iterdir()
+                if f.is_file() and f.name != "SKILL.md"
+            ]
+            if resources:
+                skill["resources"] = resources
+                
+            skills.append(skill)
+            
+        except Exception:
+            continue
+    
+    return skills
+
+
 def load_skill_instructions(skill_path: str) -> str:
     """Load full instructions for a skill.
 
@@ -194,8 +259,24 @@ def get_skills_system_prompt(
     lines = [
         "## 可用技能",
         "",
-        "您可以访问扩展您能力的技能。",
-        "使用 `list_skills` 查看可用技能，使用 `load_skill` 加载技能说明。",
+        "您可以访问扩展您能力的技能。这些技能是专门设计的模块化能力包，包含针对特定任务的详细指导和资源。",
+        "",
+        "### ⚠️ 技能优先原则（重要）",
+        "",
+        "**当用户的问题或任务与某个技能高度匹配时，请务必优先使用对应的技能来完成任务。**",
+        "",
+        "技能使用流程：",
+        "1. 首先查看下方的技能列表，判断用户任务是否匹配某个技能",
+        "2. 如果匹配，使用 `load_skill` 加载该技能的完整说明",
+        "3. 严格按照技能说明中的步骤和方法执行任务",
+        "4. 如果技能包含资源文件（脚本、模板等），优先使用这些资源",
+        "",
+        "**为什么要优先使用技能？**",
+        "- 技能包含经过验证的最佳实践和标准流程",
+        "- 技能资源（脚本、模板）可以大幅提高效率和准确性",
+        "- 技能说明针对特定场景进行了优化",
+        "",
+        "### 可用技能列表",
         "",
     ]
 

@@ -48,15 +48,15 @@ DEFAULT_INSTRUCTIONS = """
 当你生成任何希望用户获取、下载或查看的文件时（如报告、文档、数据文件、代码文件等），**必须**将文件写入到 `intermediate/` 目录下。
 
 ✅ **正确示例**：
-- `intermediate/xxxx.md`
-- `intermediate/output.csv`
-- `intermediate/分析结果.xlsx`
+- `/workspace/intermediate/xxxx.md`
+- `/workspace/intermediate/output.csv`
+- `/workspace/intermediate/分析结果.xlsx`
 
 
 **规则说明**：
 1. 所有用户需要获取的输出文件 → 写入 `intermediate/` 目录
 2. 临时处理文件或中间结果 → 也写入 `intermediate/` 目录
-3. 如果用户指定了其他路径（如 `/workspace/文件.md`），自动转换为 `intermediate/文件.md`
+3. 如果用户指定了其他路径（如 `/workspace/文件.md`），自动转换为 `/workspace/intermediate/文件.md`
 
 ## 最佳实践
 1. **行动前先规划** - 对于复杂任务使用待办事项列表，不复杂的可以不使用write_todos制定待办事项
@@ -72,7 +72,7 @@ DEFAULT_INSTRUCTIONS = """
    - 编写 `python -c` 命令时，**必须**注意内外引号的嵌套，避免语法错误。
    - 推荐格式：`python -c "import pandas as pd; df = pd.read_excel('data.xlsx'); print(df.head())"`
    - 严禁使用 pip install 安装新包（隔离环境无公网），请利用环境已有的库。
-
+8. **优先工作** - 推荐优先使用write_todos或者list_skills等等，不推荐开头就做ls
 ## 工具使用限制
 - **最多重试 3 次**：如果同一个工具连续失败 3 次，停止重试并告知用户
 - **搜索工具**：如果搜索结果不理想，最多尝试 2-3 种不同的关键词组合后就应该告知用户
