@@ -389,22 +389,29 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
         host_intermediate_dir = Path(base_dir) / "intermediate" / str(user_id) / str(conversation_id)
         volumes[str(host_intermediate_dir)] = {"bind": "/workspace/intermediate", "mode": "rw"}
         # 3. Skills directory (read-only, with permission filtering)
-        skills_dir = Path(base_dir) / "skills"
-        skills_dir.mkdir(parents=True, exist_ok=True)
+        # Internal path for checking existence inside the container
+        internal_skills_dir = settings.BASE_DIR / "skills"
+        
+        # Host path for Docker volume binding
+        host_skills_dir = Path(base_dir) / "skills"
         
         # Mount skills based on allowed_skill_names
         if self._allowed_skill_names is not None:
             # Mount only permitted skill subdirectories
             for skill_name in self._allowed_skill_names:
-                skill_path = skills_dir / skill_name
-                if skill_path.exists() and skill_path.is_dir():
-                    volumes[str(skill_path)] = {
+                # Check existence using INTERNAL path
+                internal_skill_path = internal_skills_dir / skill_name
+                
+                if internal_skill_path.exists() and internal_skill_path.is_dir():
+                    # Bind using HOST path
+                    host_skill_path = host_skills_dir / skill_name
+                    volumes[str(host_skill_path)] = {
                         "bind": f"/workspace/skills/{skill_name}",
                         "mode": "ro"
                     }
         else:
             # No filtering, mount entire skills directory
-            volumes[str(skills_dir)] = {"bind": "/workspace/skills", "mode": "ro"}
+            volumes[str(host_skills_dir)] = {"bind": "/workspace/skills", "mode": "ro"}
 
         # Debug: Log volumes configuration
         logfire.info("DockerSandbox built volumes", volume_count=len(volumes), volumes=list(volumes.keys()))
