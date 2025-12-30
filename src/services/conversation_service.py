@@ -302,6 +302,84 @@ class ConversationService:
         result = self.session.execute(stmt)
         return result.scalars().all()
 
+    async def archive_conversation(self, conversation_id: int, user_id: int) -> Conversation:
+        """Archive a conversation."""
+        conv = self.session.query(Conversation).filter(
+            Conversation.id == conversation_id,
+            Conversation.user_id == user_id
+        ).first()
+        
+        if not conv:
+            raise ValueError(f"Conversation {conversation_id} not found")
+        
+        conv.is_archived = True
+        self.session.commit()
+        self.session.refresh(conv)
+        return conv
+
+    async def unarchive_conversation(self, conversation_id: int, user_id: int) -> Conversation:
+        """Unarchive a conversation."""
+        conv = self.session.query(Conversation).filter(
+            Conversation.id == conversation_id,
+            Conversation.user_id == user_id
+        ).first()
+        
+        if not conv:
+            raise ValueError(f"Conversation {conversation_id} not found")
+        
+        conv.is_archived = False
+        self.session.commit()
+        self.session.refresh(conv)
+        return conv
+
+    async def star_conversation(self, conversation_id: int, user_id: int) -> Conversation:
+        """Star a conversation."""
+        conv = self.session.query(Conversation).filter(
+            Conversation.id == conversation_id,
+            Conversation.user_id == user_id
+        ).first()
+        
+        if not conv:
+            raise ValueError(f"Conversation {conversation_id} not found")
+        
+        conv.is_starred = True
+        self.session.commit()
+        self.session.refresh(conv)
+        return conv
+
+    async def unstar_conversation(self, conversation_id: int, user_id: int) -> Conversation:
+        """Unstar a conversation."""
+        conv = self.session.query(Conversation).filter(
+            Conversation.id == conversation_id,
+            Conversation.user_id == user_id
+        ).first()
+        
+        if not conv:
+            raise ValueError(f"Conversation {conversation_id} not found")
+        
+        conv.is_starred = False
+        self.session.commit()
+        self.session.refresh(conv)
+        return conv
+
+    async def delete_conversation(self, conversation_id: int, user_id: int) -> bool:
+        """
+        Permanently delete a conversation and all its messages.
+        
+        WARNING: This is a hard delete operation. Consider using archive_conversation instead.
+        """
+        conv = self.session.query(Conversation).filter(
+            Conversation.id == conversation_id,
+            Conversation.user_id == user_id
+        ).first()
+        
+        if not conv:
+            raise ValueError(f"Conversation {conversation_id} not found")
+        
+        self.session.delete(conv)
+        self.session.commit()
+        return True
+
     async def get_history(self, conversation_id: int) -> list[ModelMessage]:
         """
         Reconstruct PydanticAI message history from database.

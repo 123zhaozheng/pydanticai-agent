@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.database import get_db
+from src.auth import CurrentUser, get_current_user, require_admin
 from src.services.skill_service import SkillService
 
 router = APIRouter(prefix="/api/skills", tags=["skills"])
@@ -59,7 +60,7 @@ class MessageResponse(BaseModel):
 
 @router.get("", response_model=SkillListResponse)
 async def list_skills(
-    user_id: int = 1,  # TODO: Get from JWT token
+    current_user: CurrentUser = Depends(get_current_user),
     include_inactive: bool = Query(False, description="包含未激活的技能"),
     db: Session = Depends(get_db),
 ):
@@ -67,12 +68,12 @@ async def list_skills(
     获取技能列表。
     
     - 默认只返回激活的技能
-    - 按 user_id 的权限过滤技能
+    - 按用户的权限过滤技能
     """
     service = SkillService(db)
     skills = service.list_skills(
         include_inactive=include_inactive,
-        user_id=user_id,
+        user_id=current_user.id,
     )
     return SkillListResponse(skills=skills, total=len(skills))
 
@@ -80,6 +81,7 @@ async def list_skills(
 @router.get("/{name}", response_model=SkillResponse)
 async def get_skill(
     name: str,
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """获取技能详情。"""
@@ -93,11 +95,11 @@ async def get_skill(
 @router.post("/upload", response_model=SkillResponse)
 async def upload_skill(
     file: UploadFile = File(..., description="技能 ZIP 文件 (包含 SKILL.md)"),
-    user_id: int = Query(1, description="上传者用户 ID"),
+    admin: CurrentUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """
-    上传技能 ZIP 文件。
+    上传技能 ZIP 文件。(仅管理员)
     
     ZIP 文件结构要求:
     - 包含 SKILL.md 文件
@@ -116,7 +118,7 @@ async def upload_skill(
     
     try:
         service = SkillService(db)
-        skill = service.upload_skill(tmp_path, created_by=user_id)
+        skill = service.upload_skill(tmp_path, created_by=admin.id)
         return skill
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -129,10 +131,11 @@ async def upload_skill(
 async def delete_skill(
     name: str,
     delete_files: bool = Query(True, description="是否同时删除技能目录"),
+    admin: CurrentUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """
-    删除技能。
+    删除技能。(仅管理员)
     
     - 默认同时删除技能目录和数据库记录
     - 设置 delete_files=false 仅删除数据库记录
@@ -147,9 +150,10 @@ async def delete_skill(
 @router.post("/{name}/deactivate", response_model=MessageResponse)
 async def deactivate_skill(
     name: str,
+    admin: CurrentUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """停用技能 (不删除文件)。"""
+    """停用技能 (不删除文件)。(仅管理员)"""
     service = SkillService(db)
     success = service.deactivate_skill(name)
     if not success:
@@ -164,9 +168,10 @@ async def add_role_permission(
     name: str,
     role_id: int,
     body: PermissionRequest,
+    admin: CurrentUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """为角色添加技能权限。"""
+    """为角色添加技能权限。(仅管理员)"""
     service = SkillService(db)
     perm = service.add_role_permission(
         name, role_id, 
@@ -182,9 +187,10 @@ async def add_role_permission(
 async def remove_role_permission(
     name: str,
     role_id: int,
+    admin: CurrentUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """移除角色的技能权限。"""
+    """移除角色的技能权限。(仅管理员)"""
     service = SkillService(db)
     success = service.remove_role_permission(name, role_id)
     if not success:
@@ -197,9 +203,10 @@ async def add_department_permission(
     name: str,
     department_id: int,
     body: DepartmentPermissionRequest,
+    admin: CurrentUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """为部门添加技能权限。"""
+    """为部门添加技能权限。(仅管理员)"""
     service = SkillService(db)
     perm = service.add_department_permission(
         name, department_id,
@@ -214,9 +221,10 @@ async def add_department_permission(
 async def remove_department_permission(
     name: str,
     department_id: int,
+    admin: CurrentUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """移除部门的技能权限。"""
+    """移除部门的技能权限。(仅管理员)"""
     service = SkillService(db)
     success = service.remove_department_permission(name, department_id)
     if not success:
@@ -229,8 +237,9 @@ async def remove_department_permission(
 @router.get("/{name}/allowed-users", response_model=list[int])
 async def get_allowed_users(
     name: str,
+    admin: CurrentUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """获取有权访问该技能的用户 ID 列表。"""
+    """获取有权访问该技能的用户 ID 列表。(仅管理员)"""
     # TODO: Implement reverse lookup
     raise HTTPException(status_code=501, detail="尚未实现")

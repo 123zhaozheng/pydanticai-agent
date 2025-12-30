@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 
 from src.database import get_db
+from src.auth import CurrentUser, get_current_user, require_admin
 from src.models.tools_skills import McpServer, TransportType
 from src.services.mcp_service import MCPServerService
 from pydantic_deep.toolsets.mcp import reload_mcp_toolset
@@ -73,7 +74,7 @@ class ConnectionTestResponse(BaseModel):
 
 @router.get("", response_model=list[MCPServerResponse])
 async def list_mcp_servers(
-    user_id: int = 1,  # TODO: Get from JWT token
+    current_user: CurrentUser = Depends(get_current_user),
     include_inactive: bool = Query(False, description="Include inactive servers"),
     transport_type: TransportType | None = Query(None, description="Filter by transport type"),
     db: Session = Depends(get_db)
@@ -83,7 +84,7 @@ async def list_mcp_servers(
     """
     service = MCPServerService(db)
     servers = service.list_servers(
-        user_id=user_id,
+        user_id=current_user.id,
         include_inactive=include_inactive,
         transport_type=transport_type
     )
@@ -93,13 +94,13 @@ async def list_mcp_servers(
 @router.post("", response_model=MCPServerResponse, status_code=201)
 async def create_mcp_server(
     body: MCPServerCreate,
-    user_id: int = 1,  # TODO: Get from JWT token
+    admin: CurrentUser = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """Create a new MCP server."""
+    """Create a new MCP server. (仅管理员)"""
     service = MCPServerService(db)
     try:
-        server = service.create_server(body.dict(), created_by=user_id)
+        server = service.create_server(body.dict(), created_by=admin.id)
         # Reload MCP toolset to pick up changes
         reload_mcp_toolset()
         return server
@@ -110,6 +111,7 @@ async def create_mcp_server(
 @router.get("/{server_name}", response_model=MCPServerResponse)
 async def get_mcp_server(
     server_name: str,
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get a single MCP server by name."""
@@ -124,9 +126,10 @@ async def get_mcp_server(
 async def update_mcp_server(
     server_name: str,
     body: MCPServerUpdate,
+    admin: CurrentUser = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """Update an existing MCP server."""
+    """Update an existing MCP server. (仅管理员)"""
     service = MCPServerService(db)
     try:
         updates = body.dict(exclude_unset=True)
@@ -142,9 +145,10 @@ async def update_mcp_server(
 async def delete_mcp_server(
     server_name: str,
     hard_delete: bool = Query(False, description="Permanently delete (vs soft delete)"),
+    admin: CurrentUser = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """Delete an MCP server."""
+    """Delete an MCP server. (仅管理员)"""
     service = MCPServerService(db)
     try:
         service.delete_server(server_name, soft_delete=not hard_delete)
@@ -157,10 +161,11 @@ async def delete_mcp_server(
 @router.post("/{server_name}/test", response_model=ConnectionTestResponse)
 async def test_mcp_server(
     server_name: str,
+    admin: CurrentUser = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """
-    Test MCP server connection.
+    Test MCP server connection. (仅管理员)
     """
     service = MCPServerService(db)
     result = service.test_connection(server_name)
@@ -191,9 +196,10 @@ async def add_server_role_permission(
     server_name: str,
     role_id: int,
     body: RolePermissionRequest,
+    admin: CurrentUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """为角色添加 MCP Server 权限。"""
+    """为角色添加 MCP Server 权限。(仅管理员)"""
     service = MCPServerService(db)
     perm = service.add_role_permission(
         server_name, role_id,
@@ -209,9 +215,10 @@ async def add_server_role_permission(
 async def remove_server_role_permission(
     server_name: str,
     role_id: int,
+    admin: CurrentUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """移除角色的 MCP Server 权限。"""
+    """移除角色的 MCP Server 权限。(仅管理员)"""
     service = MCPServerService(db)
     success = service.remove_role_permission(server_name, role_id)
     if not success:
@@ -224,9 +231,10 @@ async def add_server_department_permission(
     server_name: str,
     department_id: int,
     body: DeptPermissionRequest,
+    admin: CurrentUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """为部门添加 MCP Server 权限。"""
+    """为部门添加 MCP Server 权限。(仅管理员)"""
     service = MCPServerService(db)
     perm = service.add_department_permission(
         server_name, department_id,
@@ -241,9 +249,10 @@ async def add_server_department_permission(
 async def remove_server_department_permission(
     server_name: str,
     department_id: int,
+    admin: CurrentUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """移除部门的 MCP Server 权限。"""
+    """移除部门的 MCP Server 权限。(仅管理员)"""
     service = MCPServerService(db)
     success = service.remove_department_permission(server_name, department_id)
     if not success:

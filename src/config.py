@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     # Priority: PYDANTIC_DEEP_BASE_DIR env var > calculated from file location
     PYDANTIC_DEEP_BASE_DIR: Optional[Path] = None
     PYDANTIC_DEEP_HOST_DIR: Optional[Path] = None
+    
+    # JWT Authentication
+    JWT_SECRET_KEY: str = "change-me-in-production-use-strong-random-key"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     @property
     def BASE_DIR(self) -> Path:

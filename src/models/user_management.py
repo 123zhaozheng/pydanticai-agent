@@ -99,6 +99,9 @@ class Role(Base):
                                    cascade="all, delete-orphan")
     skill_permissions = relationship("RoleSkillPermission", back_populates="role",
                                     cascade="all, delete-orphan")
+    # Model permissions (from llm_models.py)
+    model_permissions = relationship("RoleModelPermission", back_populates="role",
+                                    cascade="all, delete-orphan")
     
     # Agent permissions (if exists)
     # agent_permissions = relationship("AgentPermission", back_populates="role", cascade="all, delete-orphan")
@@ -134,6 +137,9 @@ class Department(Base):
     tool_permissions = relationship("DepartmentToolPermission", back_populates="department",
                                    cascade="all, delete-orphan")
     skill_permissions = relationship("DepartmentSkillPermission", back_populates="department",
+                                    cascade="all, delete-orphan")
+    # Model permissions (from llm_models.py)
+    model_permissions = relationship("DepartmentModelPermission", back_populates="department",
                                     cascade="all, delete-orphan")
     
     # Agent permissions (if exists)

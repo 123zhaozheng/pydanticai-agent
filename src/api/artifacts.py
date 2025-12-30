@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.database import get_db
+from src.auth import CurrentUser, get_current_user
 from src.services.conversation_service import ConversationService
 from src.config import settings
 
@@ -40,7 +41,7 @@ def get_artifact_directory(user_id: int, conversation_id: int) -> Path:
 @router.get("", response_model=list[ArtifactItem])
 async def list_artifacts(
     conversation_id: int,
-    user_id: int = 1,  # TODO: Get from JWT token
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -48,11 +49,11 @@ async def list_artifacts(
     """
     # Verify conversation access
     service = ConversationService(db)
-    conversation = await service.get_conversation(conversation_id, user_id)
+    conversation = await service.get_conversation(conversation_id, current_user.id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    artifact_dir = get_artifact_directory(user_id, conversation_id)
+    artifact_dir = get_artifact_directory(current_user.id, conversation_id)
     
     if not artifact_dir.exists():
         return []
@@ -79,7 +80,7 @@ async def list_artifacts(
 async def download_artifact(
     conversation_id: int,
     filename: str,
-    user_id: int = 1,  # TODO: Get from JWT token
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -87,11 +88,11 @@ async def download_artifact(
     """
     # Verify conversation access
     service = ConversationService(db)
-    conversation = await service.get_conversation(conversation_id, user_id)
+    conversation = await service.get_conversation(conversation_id, current_user.id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    artifact_dir = get_artifact_directory(user_id, conversation_id)
+    artifact_dir = get_artifact_directory(current_user.id, conversation_id)
     file_path = artifact_dir / filename
 
     # Security check: prevent directory traversal
@@ -114,7 +115,7 @@ async def download_artifact(
 async def delete_artifact(
     conversation_id: int,
     filename: str,
-    user_id: int = 1,  # TODO: Get from JWT token
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -122,11 +123,11 @@ async def delete_artifact(
     """
     # Verify conversation access
     service = ConversationService(db)
-    conversation = await service.get_conversation(conversation_id, user_id)
+    conversation = await service.get_conversation(conversation_id, current_user.id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    artifact_dir = get_artifact_directory(user_id, conversation_id)
+    artifact_dir = get_artifact_directory(current_user.id, conversation_id)
     file_path = artifact_dir / filename
 
     # Security check

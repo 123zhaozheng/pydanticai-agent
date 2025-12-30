@@ -26,7 +26,11 @@ from src.models.conversations import (
     Message,
 )
 
-from src.models.llm_models import LLMModelConfig
+from src.models.llm_models import (
+    LLMModelConfig,
+    RoleModelPermission,
+    DepartmentModelPermission,
+)
 
 __all__ = [
     # Tools & Skills
@@ -49,5 +53,8 @@ __all__ = [
     # Conversations
     "Conversation",
     "Message",
+    # LLM Models
     "LLMModelConfig",
+    "RoleModelPermission",
+    "DepartmentModelPermission",
 ]

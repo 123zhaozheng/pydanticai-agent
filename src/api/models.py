@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 
 from src.database import get_db
+from src.auth import CurrentUser, get_current_user, require_admin
 from src.models.llm_models import LLMModelConfig
 from src.services.model_manager import model_manager
 
@@ -23,7 +24,7 @@ class ModelConfigCreate(BaseModel):
     base_url: str | None = Field(None, max_length=500, description="Custom API endpoint")
     api_key: str | None = Field(None, description="API key (will be encrypted)")
     default_temperature: float = Field(0.7, ge=0.0, le=2.0)
-    default_max_tokens: int = Field(2000, ge=1, le=100000)
+    default_max_tokens: int = Field(2000, ge=1, le=1000000)
     supports_streaming: bool = True
     supports_tools: bool = True
     extra_config: dict | None = None
@@ -39,7 +40,7 @@ class ModelConfigUpdate(BaseModel):
     base_url: str | None = None
     api_key: str | None = None
     default_temperature: float | None = Field(None, ge=0.0, le=2.0)
-    default_max_tokens: int | None = Field(None, ge=1, le=100000)
+    default_max_tokens: int | None = Field(None, ge=1, le=1000000)
     supports_streaming: bool | None = None
     supports_tools: bool | None = None
     extra_config: dict | None = None
@@ -76,6 +77,7 @@ class ModelConfigResponse(BaseModel):
 
 @router.get("", response_model=list[ModelConfigResponse])
 async def list_models(
+    current_user: CurrentUser = Depends(get_current_user),
     include_inactive: bool = Query(False, description="Include inactive models"),
     db: Session = Depends(get_db)
 ):
@@ -84,6 +86,7 @@ async def list_models(
     
     **Returns:** List of model configs ordered by name.
     """
+    # TODO: Filter by user's role/department permissions when needed
     query = db.query(LLMModelConfig)
     
     if not include_inactive:
@@ -96,9 +99,10 @@ async def list_models(
 @router.post("", response_model=ModelConfigResponse, status_code=201)
 async def create_model(
     body: ModelConfigCreate,
+    admin: CurrentUser = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """Create a new model configuration."""
+    """Create a new model configuration. (仅管理员)"""
     
     # Check if name already exists
     existing = db.query(LLMModelConfig).filter(LLMModelConfig.name == body.name).first()
@@ -123,6 +127,7 @@ async def create_model(
 @router.get("/{model_name:path}", response_model=ModelConfigResponse)
 async def get_model(
     model_name: str,
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get a single model configuration by name."""
@@ -136,9 +141,10 @@ async def get_model(
 async def update_model(
     model_name: str,
     body: ModelConfigUpdate,
+    admin: CurrentUser = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """Update an existing model configuration."""
+    """Update an existing model configuration. (仅管理员)"""
     model_config = db.query(LLMModelConfig).filter(LLMModelConfig.name == model_name).first()
     if not model_config:
         raise HTTPException(status_code=404, detail=f"Model '{model_name}' not found")
@@ -167,9 +173,10 @@ async def update_model(
 @router.delete("/{model_name:path}", status_code=204)
 async def delete_model(
     model_name: str,
+    admin: CurrentUser = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """Delete a model configuration."""
+    """Delete a model configuration. (仅管理员)"""
     model_config = db.query(LLMModelConfig).filter(LLMModelConfig.name == model_name).first()
     if not model_config:
         raise HTTPException(status_code=404, detail=f"Model '{model_name}' not found")
@@ -192,9 +199,10 @@ async def delete_model(
 @router.post("/{model_name:path}/set-default", response_model=ModelConfigResponse)
 async def set_default_model(
     model_name: str,
+    admin: CurrentUser = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """Set a model as the default."""
+    """Set a model as the default. (仅管理员)"""
     model_config = db.query(LLMModelConfig).filter(LLMModelConfig.name == model_name).first()
     if not model_config:
         raise HTTPException(status_code=404, detail=f"Model '{model_name}' not found")

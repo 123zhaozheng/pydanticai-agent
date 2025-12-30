@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Literal
 
 from src.database import get_db
+from src.auth import CurrentUser, get_current_user
 from src.services.conversation_service import ConversationService
 from pydantic_deep.backends.sandbox import DockerSandbox
 
@@ -62,7 +63,7 @@ class ConversationCreate(BaseModel):
 
 @router.get("", response_model=list[ConversationResponse])
 async def list_conversations(
-    user_id: int = 1,  # TODO: Get from JWT token
+    current_user: CurrentUser = Depends(get_current_user),
     include_archived: bool = Query(False, description="Include archived conversations"),
     limit: int = Query(50, ge=1, le=100, description="Max conversations to return"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
@@ -75,7 +76,7 @@ async def list_conversations(
     """
     service = ConversationService(db)
     conversations = await service.list_conversations(
-        user_id, 
+        current_user.id, 
         include_archived=include_archived,
         limit=limit,
         offset=offset
@@ -86,24 +87,24 @@ async def list_conversations(
 @router.post("", response_model=ConversationResponse, status_code=201)
 async def create_conversation(
     body: ConversationCreate,
-    user_id: int = 1,  # TODO: Get from JWT token
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Create a new conversation."""
     service = ConversationService(db)
-    conversation = await service.create_conversation(user_id, body.title)
+    conversation = await service.create_conversation(current_user.id, body.title)
     return conversation
 
 
 @router.get("/{conversation_id}", response_model=ConversationResponse)
 async def get_conversation(
     conversation_id: int,
-    user_id: int = 1,  # TODO: Get from JWT token
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get a single conversation by ID."""
     service = ConversationService(db)
-    conversation = await service.get_conversation(conversation_id, user_id)
+    conversation = await service.get_conversation(conversation_id, current_user.id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conversation
@@ -112,7 +113,7 @@ async def get_conversation(
 @router.get("/{conversation_id}/messages", response_model=list[MessageResponse])
 async def get_conversation_messages(
     conversation_id: int,
-    user_id: int = 1,  # TODO: Get from JWT token
+    current_user: CurrentUser = Depends(get_current_user),
     limit: int = Query(100, ge=1, le=500, description="Max messages to return"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     db: Session = Depends(get_db)
@@ -126,11 +127,107 @@ async def get_conversation_messages(
     try:
         messages = await service.get_messages(
             conversation_id, 
-            user_id,
+            current_user.id,
             limit=limit,
             offset=offset
         )
         return messages
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+# ===== Conversation Status Endpoints =====
+
+@router.post("/{conversation_id}/archive", response_model=ConversationResponse)
+async def archive_conversation(
+    conversation_id: int,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Archive a conversation.
+    
+    Archived conversations are hidden from the default list but can still be accessed.
+    """
+    service = ConversationService(db)
+    try:
+        conversation = await service.archive_conversation(conversation_id, current_user.id)
+        return conversation
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{conversation_id}/unarchive", response_model=ConversationResponse)
+async def unarchive_conversation(
+    conversation_id: int,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Unarchive a conversation.
+    
+    Restores the conversation to the default list.
+    """
+    service = ConversationService(db)
+    try:
+        conversation = await service.unarchive_conversation(conversation_id, current_user.id)
+        return conversation
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{conversation_id}/star", response_model=ConversationResponse)
+async def star_conversation(
+    conversation_id: int,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Star/favorite a conversation.
+    
+    Starred conversations can be filtered or sorted to the top.
+    """
+    service = ConversationService(db)
+    try:
+        conversation = await service.star_conversation(conversation_id, current_user.id)
+        return conversation
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{conversation_id}/unstar", response_model=ConversationResponse)
+async def unstar_conversation(
+    conversation_id: int,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Remove star from a conversation.
+    """
+    service = ConversationService(db)
+    try:
+        conversation = await service.unstar_conversation(conversation_id, current_user.id)
+        return conversation
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.delete("/{conversation_id}", status_code=204)
+async def delete_conversation(
+    conversation_id: int,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Permanently delete a conversation.
+    
+    **WARNING:** This action is irreversible. All messages will be deleted.
+    Consider using archive instead.
+    """
+    service = ConversationService(db)
+    try:
+        await service.delete_conversation(conversation_id, current_user.id)
+        return None
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -162,7 +259,7 @@ async def chat_stream(
     conversation_id: int,
     body: ChatRequest,
     background_tasks: BackgroundTasks,
-    user_id: int = 1,  # TODO: Get from JWT token
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -194,8 +291,8 @@ async def chat_stream(
     from pydantic_deep.toolsets.skills import discover_skills_from_directory
     
     skill_service = SkillService(db)
-    allowed_skill_names = skill_service.get_allowed_skill_names(user_id)
-    logger.info("User skill access", user_id=user_id, skill_count=len(allowed_skill_names), skills=allowed_skill_names)
+    allowed_skill_names = skill_service.get_allowed_skill_names(current_user.id)
+    logger.info("User skill access", user_id=current_user.id, skill_count=len(allowed_skill_names), skills=allowed_skill_names)
     
     # Calculate effective skills (intersection of frontend selection and user permissions)
     if body.skills == "auto":
@@ -205,7 +302,7 @@ async def chat_stream(
         effective_skill_names = [s for s in body.skills if s in allowed_skill_names]
     
     logger.info("Effective skills calculated",
-        user_id=user_id,
+        user_id=current_user.id,
         requested=body.skills,
         permitted=allowed_skill_names,
         effective=effective_skill_names
@@ -224,15 +321,15 @@ async def chat_stream(
     else:
         # Create sandbox with automatic volume mounting, image config, and skill filtering
         sandbox = DockerSandbox(
-            user_id=user_id,
+            user_id=current_user.id,
             conversation_id=conversation_id,
             upload_path=body.upload_path,  # Optional custom upload path
-            session_id=f"{user_id}:{conversation_id}",  # Name container as user_id:conversation_id
+            session_id=f"{current_user.id}:{conversation_id}",  # Name container as user_id:conversation_id
             image_config=get_default_sandbox_config(),  # 注入环境能力描述到系统提示
             allowed_skill_names=effective_skill_names,  # 只挂载有效的技能目录（交集后）
         )
         _sandbox_manager[conversation_id] = sandbox
-        logger.info("Created sandbox", conversation_id=conversation_id, session_id=f"{user_id}:{conversation_id}")
+        logger.info("Created sandbox", conversation_id=conversation_id, session_id=f"{current_user.id}:{conversation_id}")
 
     # Discover files in container
     file_paths = discover_container_files(sandbox)
@@ -241,7 +338,7 @@ async def chat_stream(
     # Create DeepAgentDeps with sandbox backend and file paths
     deps = DeepAgentDeps(
         backend=sandbox,
-        user_id=user_id,
+        user_id=current_user.id,
         conversation_id=conversation_id,
         file_paths=file_paths  # Inject container file paths
     )
@@ -265,7 +362,7 @@ async def chat_stream(
     # --- Title Generation Setup ---
     # Retrieve conversation to check if title generation is needed
     # We check synchronously here because it's fast and determines if we need the overhead
-    conv = await service.get_conversation(conversation_id, user_id)
+    conv = await service.get_conversation(conversation_id, current_user.id)
     
     # Shared buffer to pass generated text to background task
     # Using a list as a mutable container
@@ -277,7 +374,7 @@ async def chat_stream(
         background_tasks.add_task(
             background_generate_title,
             conversation_id=conversation_id,
-            user_id=user_id,
+            user_id=current_user.id,
             user_message=body.message,
             shared_buffer=shared_buffer
         )
@@ -288,7 +385,7 @@ async def chat_stream(
             async for chunk in service.chat_stream(
                 conversation_id=conversation_id,
                 user_message=body.message,
-                user_id=user_id,
+                user_id=current_user.id,
                 deps=deps,
                 agent=agent
             ):

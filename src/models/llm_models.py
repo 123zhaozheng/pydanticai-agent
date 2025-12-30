@@ -1,6 +1,8 @@
-"""LLM Model Configuration models."""
+"""LLM Model Configuration models with permission management."""
 
-from sqlalchemy import Column, Integer, String, Text, Boolean, Float, JSON, DateTime
+from sqlalchemy import Column, Integer, String, Text, Boolean, Float, JSON, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 from datetime import datetime
 
 from src.database import Base
@@ -53,5 +55,66 @@ class LLMModelConfig(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
+    # Relationships for permissions
+    role_permissions = relationship("RoleModelPermission", back_populates="model",
+                                   cascade="all, delete-orphan")
+    department_permissions = relationship("DepartmentModelPermission", back_populates="model",
+                                         cascade="all, delete-orphan")
+    
     def __repr__(self):
         return f"<LLMModelConfig(name='{self.name}', provider='{self.provider_type}', model='{self.model_name}')>"
+
+
+class RoleModelPermission(Base):
+    """Role's Model Permissions - Defines which roles can access which models."""
+    __tablename__ = "role_model_permissions"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    role_id = Column(Integer, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False)
+    model_id = Column(Integer, ForeignKey("llm_model_configs.id", ondelete="CASCADE"), nullable=False)
+    
+    # Permission Types
+    can_use = Column(Boolean, default=True, comment="Can use this model for chat")
+    can_configure = Column(Boolean, default=False, comment="Can modify model config")
+    
+    # Audit
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    role = relationship("Role", back_populates="model_permissions")
+    model = relationship("LLMModelConfig", back_populates="role_permissions")
+    
+    __table_args__ = (
+        {"comment": "Role-Model Permission Mapping"},
+    )
+    
+    def __repr__(self):
+        return f"<RoleModelPermission role_id={self.role_id} model_id={self.model_id}>"
+
+
+class DepartmentModelPermission(Base):
+    """Department-level Model Access Control - Overrides role permissions within department."""
+    __tablename__ = "department_model_permissions"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    department_id = Column(Integer, ForeignKey("departments.id", ondelete="CASCADE"), 
+                          nullable=False)
+    model_id = Column(Integer, ForeignKey("llm_model_configs.id", ondelete="CASCADE"), nullable=False)
+    
+    is_allowed = Column(Boolean, default=True, 
+                       comment="Whether department can access this model")
+    
+    # Audit
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    department = relationship("Department", back_populates="model_permissions")
+    model = relationship("LLMModelConfig", back_populates="department_permissions")
+    
+    __table_args__ = (
+        {"comment": "Department-level Model Access Control"},
+    )
+    
+    def __repr__(self):
+        return f"<DepartmentModelPermission dept_id={self.department_id} model_id={self.model_id}>"
+

@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.database import get_db
+from src.auth import CurrentUser, get_current_user
 from src.services.conversation_service import ConversationService
 
 router = APIRouter(prefix="/api/conversations/{conversation_id}/todos", tags=["todos"])
@@ -18,7 +19,7 @@ class TodoUpdate(BaseModel):
 @router.get("", response_model=list[dict])
 async def get_todos(
     conversation_id: int,
-    user_id: int = 1,  # TODO: Get from JWT token
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -28,7 +29,7 @@ async def get_todos(
     """
     service = ConversationService(db)
     try:
-        todos = await service.get_todos(conversation_id, user_id)
+        todos = await service.get_todos(conversation_id, current_user.id)
         return todos
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -38,7 +39,7 @@ async def get_todos(
 async def update_todos(
     conversation_id: int,
     body: TodoUpdate,
-    user_id: int = 1,  # TODO: Get from JWT token
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -61,7 +62,7 @@ async def update_todos(
     """
     service = ConversationService(db)
     try:
-        updated = await service.update_todos(conversation_id, user_id, body.todos)
+        updated = await service.update_todos(conversation_id, current_user.id, body.todos)
         return updated
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
