@@ -1,6 +1,7 @@
 """JWT Authentication and Authorization module.
 
 Provides dependency injection for FastAPI endpoints with role-based access control.
+Compatible with external systems that issue simple JWT tokens (sub + exp only).
 
 Usage:
     from src.auth import CurrentUser, get_current_user, require_admin
@@ -16,16 +17,18 @@ Usage:
         return {"created_by": admin.id}
 """
 
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timedelta
+from typing import Optional, Union, Any
 
 import jwt
 import logfire
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from src.config import settings
+from src.database import get_db
 
 logger = logfire
 
@@ -34,39 +37,37 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 class TokenPayload(BaseModel):
-    """JWT Token payload structure."""
+    """JWT Token payload structure (compatible with external systems)."""
     sub: int | str  # user_id
     exp: datetime
     iat: Optional[datetime] = None
-    role: str = "user"  # "user" | "admin"
-    permissions: list[str] = []
+    type: Optional[str] = None  # "refresh" for refresh tokens
 
 
 class CurrentUser(BaseModel):
-    """Current authenticated user (parsed from JWT)."""
+    """Current authenticated user (from database)."""
     id: int
-    role: str = "user"
+    username: Optional[str] = None
     is_admin: bool = False
-    permissions: list[str] = []
+    is_active: bool = True
     
     @classmethod
-    def from_token(cls, payload: TokenPayload) -> "CurrentUser":
-        """Create CurrentUser from token payload."""
-        user_id = payload.sub if isinstance(payload.sub, int) else int(payload.sub)
-        is_admin = payload.role == "admin"
+    def from_db_user(cls, user) -> "CurrentUser":
+        """Create CurrentUser from database User model."""
         return cls(
-            id=user_id,
-            role=payload.role,
-            is_admin=is_admin,
-            permissions=payload.permissions,
+            id=user.id,
+            username=user.username,
+            is_admin=user.is_admin,
+            is_active=user.is_active,
         )
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db)
 ) -> CurrentUser:
     """
-    Extract and validate current user from JWT token.
+    Extract and validate current user from JWT token, then query database.
     
     Use this dependency for any endpoint that requires authentication:
     
@@ -75,7 +76,7 @@ async def get_current_user(
             return service.get_items(user_id=current_user.id)
     
     Raises:
-        HTTPException 401: If token is missing, expired, or invalid
+        HTTPException 401: If token is missing, expired, invalid, or user not found
     """
     if not credentials:
         raise HTTPException(
@@ -100,9 +101,30 @@ async def get_current_user(
         logger.debug(f"Decoded payload: {payload}")
         
         token_data = TokenPayload(**payload)
-        logger.debug(f"Validated token data: user={token_data.sub}, role={token_data.role}")
+        user_id = int(token_data.sub) if isinstance(token_data.sub, str) else token_data.sub
+        logger.debug(f"Validated token for user_id={user_id}")
         
-        return CurrentUser.from_token(token_data)
+        # Query user from database
+        from src.models.user_management import User
+        user = db.query(User).filter(User.id == user_id).first()
+        
+        if not user:
+            logger.warning(f"User not found: {user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        if not user.is_active:
+            logger.warning(f"User is inactive: {user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User is inactive",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        return CurrentUser.from_db_user(user)
     
     except jwt.ExpiredSignatureError:
         logger.warning("Token expired")
@@ -125,6 +147,8 @@ async def get_current_user(
             detail="Invalid token payload",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Unexpected token validation error: {e}")
         raise HTTPException(
@@ -135,7 +159,8 @@ async def get_current_user(
 
 
 async def get_current_user_optional(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db)
 ) -> CurrentUser | None:
     """
     Optional authentication - returns None if no token provided.
@@ -152,7 +177,7 @@ async def get_current_user_optional(
         return None
     
     try:
-        return await get_current_user(credentials)
+        return await get_current_user(credentials, db)
     except HTTPException:
         return None
 
@@ -181,37 +206,51 @@ async def require_admin(
     return current_user
 
 
+# ===== Token Creation (for testing or internal use) =====
+
 def create_access_token(
-    user_id: int,
-    role: str = "user",
-    permissions: list[str] | None = None,
-    expires_minutes: int | None = None,
+    subject: Union[str, Any],
+    expires_delta: Optional[timedelta] = None
 ) -> str:
     """
-    Create a JWT access token.
+    Create a JWT access token (compatible with external system format).
     
     Args:
-        user_id: User ID to encode in token
-        role: User role ("user" or "admin")
-        permissions: Optional list of permission strings
-        expires_minutes: Token expiry in minutes (uses config default if not specified)
-    
+        subject: Token subject (typically user ID)
+        expires_delta: Optional expiration delta, defaults to settings value
+        
     Returns:
-        Encoded JWT token string
+        JWT token as string
     """
-    from datetime import timedelta
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
     
-    if expires_minutes is None:
-        expires_minutes = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+    to_encode = {"exp": expire, "sub": str(subject)}
+    encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return encoded_jwt
+
+
+def create_refresh_token(
+    subject: Union[str, Any],
+    expires_delta: Optional[timedelta] = None
+) -> str:
+    """
+    Create a JWT refresh token.
     
-    expire = datetime.utcnow() + timedelta(minutes=expires_minutes)
+    Args:
+        subject: Token subject (typically user ID)
+        expires_delta: Optional expiration delta, defaults to settings value
+        
+    Returns:
+        JWT token as string
+    """
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=settings.JWT_REFRESH_TOKEN_EXPIRE_MINUTES)
     
-    payload = {
-        "sub": str(user_id),  # RFC 7519 requires sub to be a string
-        "role": role,
-        "permissions": permissions or [],
-        "exp": expire,
-        "iat": datetime.utcnow(),
-    }
-    
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    to_encode = {"exp": expire, "sub": str(subject), "type": "refresh"}
+    encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return encoded_jwt
