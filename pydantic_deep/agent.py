@@ -55,7 +55,6 @@ DEFAULT_INSTRUCTIONS = """
 
 **规则说明**：
 1. **`execute` 工具使用规范**：
-   - 不允许使用 `python -c` 命令，避免语法错误，推荐先写成py脚本在执行哦
    - 严禁使用 pip install 安装新包（隔离环境无公网），请利用环境已有的库。
 2. 所有用户需要获取的输出文件 → 写入 `intermediate/` 目录
 3. 临时处理文件或中间结果 → 也写入 `intermediate/` 目录

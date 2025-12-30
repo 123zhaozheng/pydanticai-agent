@@ -460,11 +460,15 @@ class DockerSandbox(BaseSandbox):  # pragma: no cover
 
         try:
             # Note: Docker SDK exec_run doesn't support timeout parameter directly.
-            # For timeouts, we wrap the command with 'timeout' utility.
+            # Solution: Pass command as array elements to avoid shell quote escaping issues.
+            # The command itself may contain special characters (quotes, parentheses),
+            # so we pass it as a single shell argument to avoid double-parsing.
             if timeout:
-                command = f"timeout {timeout} sh -c {command!r}"
-                exec_cmd = ["sh", "-c", command]
+                # Use timeout utility: timeout <seconds> sh -c "<command>"
+                # Pass as array to avoid shell escaping issues
+                exec_cmd = ["timeout", str(timeout), "sh", "-c", command]
             else:
+                # Direct execution - pass command as string to sh -c
                 exec_cmd = ["sh", "-c", command]
 
             exit_code, output = self._container.exec_run(
