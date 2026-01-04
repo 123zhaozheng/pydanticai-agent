@@ -4,6 +4,7 @@ import os
 import logfire
 from typing import Any, Dict, Optional
 from sqlalchemy.orm import Session
+from pydantic_ai import ModelSettings
 
 from src.models.llm_models import LLMModelConfig
 
@@ -102,6 +103,33 @@ class ModelManager:
         else:
             raise ValueError(f"Unsupported provider type: {config.provider_type}")
     
+    def _build_model_settings(self, config: LLMModelConfig) -> ModelSettings:
+        """
+        Build ModelSettings from database config.
+        
+        Reads from extra_config.model_settings if available,
+        otherwise uses defaults from config fields.
+        """
+        settings_dict = {}
+        
+        # Base settings from config fields
+        if config.default_temperature is not None:
+            settings_dict['temperature'] = config.default_temperature
+        if config.default_max_tokens is not None:
+            settings_dict['max_tokens'] = config.default_max_tokens
+        
+        # Override with extra_config.model_settings if present
+        if config.extra_config and 'model_settings' in config.extra_config:
+            extra_settings = config.extra_config['model_settings']
+            # Merge extra settings (they take precedence)
+            settings_dict.update(extra_settings)
+        
+        # Default parallel_tool_calls to True if not explicitly set
+        if 'parallel_tool_calls' not in settings_dict:
+            settings_dict['parallel_tool_calls'] = True
+        
+        return ModelSettings(**settings_dict)
+    
     def _create_openai_model(self, config: LLMModelConfig):
         """Create OpenAI or OpenAI-compatible model."""
         from pydantic_ai.models.openai import OpenAIChatModel
@@ -114,7 +142,8 @@ class ModelManager:
         
         return OpenAIChatModel(
             config.model_name,
-            provider=provider
+            provider=provider,
+            settings=self._build_model_settings(config)
         )
     
     def _create_anthropic_model(self, config: LLMModelConfig):
@@ -128,7 +157,8 @@ class ModelManager:
         
         return AnthropicModel(
             config.model_name,
-            provider=provider
+            provider=provider,
+            settings=self._build_model_settings(config)
         )
     
     def _create_gemini_model(self, config: LLMModelConfig):
@@ -142,7 +172,8 @@ class ModelManager:
         
         return GoogleModel(
             config.model_name,
-            provider=provider
+            provider=provider,
+            settings=self._build_model_settings(config)
         )
     
     def _create_deepseek_model(self, config: LLMModelConfig):
@@ -156,7 +187,8 @@ class ModelManager:
         
         return OpenAIChatModel(
             config.model_name,
-            provider=provider
+            provider=provider,
+            settings=self._build_model_settings(config)
         )
     
     def get_default_model(self, db_session: Session):

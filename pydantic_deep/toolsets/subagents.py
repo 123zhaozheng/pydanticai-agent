@@ -135,7 +135,7 @@ def create_subagent_toolset(
                 model=model,
                 instructions=config["instructions"],
                 backend=ctx.deps.backend,  # Reuse parent agent's DockerSandbox
-                include_todos=True,
+                include_todo=True,
                 include_filesystem=True,
                 include_execute=True,
                 include_skills=False,  # Subagents don't need skills system

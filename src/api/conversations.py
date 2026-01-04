@@ -239,7 +239,7 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, description="User message")
     model_name: str | None = Field(None, description="Model config name (uses default if not specified)")
     upload_path: str | None = Field(None, description="Custom upload directory path on host (optional)")
-    enable_subagents: bool = Field(False, description="Enable subagent delegation for complex tasks")
+    enable_subagents: bool = Field(True, description="Enable subagent delegation for complex tasks")
     
     # Tool and skill selection (frontend control with permission intersection)
     # - "auto": Automatically inject all tools/skills user has permission for (default)

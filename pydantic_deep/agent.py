@@ -348,6 +348,8 @@ def create_deep_agent(  # noqa: C901
     logfire.info("Creating agent", toolset_count=len(all_toolsets), toolsets=toolset_names)
 
     # Create the agent (deps will be passed at runtime via agent.run())
+    # Note: model_settings (parallel_tool_calls, temperature, etc.) are now
+    # attached to the model instance via ModelManager, based on DB config
     agent: Agent[DeepAgentDeps, Any] = Agent(
         model,
         retries=3,  # 最大重试次数,处理模型输出格式错误
@@ -359,6 +361,25 @@ def create_deep_agent(  # noqa: C901
     async def dynamic_instructions(ctx: Any) -> str:  # pragma: no cover
         """Generate dynamic instructions based on current state."""
         parts = []
+
+        # Check if model supports parallel tool calls and add guidance
+        try:
+            # Try to get model settings from the model instance
+            model_instance = agent.model
+            if hasattr(model_instance, 'settings') and model_instance.settings:
+                settings = model_instance.settings
+                if getattr(settings, 'parallel_tool_calls', False):
+                    parallel_prompt = """## 并行工具调用
+
+你的模型支持**并行工具调用**，可以在单次响应中同时调用多个工具。
+
+**使用建议**：
+- 当多个操作相互独立时，可以同时发起（如同时读取多个文件、同时搜索不同关键词）
+- 并行调用可以显著提高效率，减少往返次数
+- 但如果操作有依赖关系（如需要先读取文件A的内容才能处理），则应顺序执行"""
+                    parts.append(parallel_prompt)
+        except Exception:
+            pass  # Silently ignore if we can't access model settings
 
         # Show available files (from volume mounts or uploads)
         files_prompt = ctx.deps.get_files_summary()
